@@ -37,6 +37,12 @@ data = json.loads(out_path.read_text())
 for rec in data:
     if "energy_kwh" in rec:
         rec["energy_kwh"] = round(rec["energy_kwh"], 1)
+    if "peak_kw" in rec:
+        rec["peak_kw"] = round(rec["peak_kw"], 1)
+    if "poa_kwh_m2" in rec:
+        rec["poa_kwh_m2"] = round(rec["poa_kwh_m2"], 1)
+    if "temp_cell_max" in rec:
+        rec["temp_cell_max"] = round(rec["temp_cell_max"], 1)
 
 payload = {
     "generated_at": dt.datetime.now(timezone.utc).isoformat(),
