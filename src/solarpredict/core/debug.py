@@ -49,10 +49,19 @@ class JsonlDebugWriter:
         # open in append text mode
         self._fh = self.path.open("a", encoding="utf-8")
 
+    @staticmethod
+    def _serialize_ts(ts):
+        if hasattr(ts, "isoformat"):
+            try:
+                return ts.isoformat()
+            except Exception:
+                return str(ts)
+        return ts
+
     def emit(self, stage: str, payload: Dict[str, Any], *, ts: Any, site: Optional[str] = None, array: Optional[str] = None) -> None:
         event = {
             "stage": stage,
-            "ts": ts,
+            "ts": self._serialize_ts(ts),
             "site": site,
             "array": array,
             "payload": _ordered(payload),
