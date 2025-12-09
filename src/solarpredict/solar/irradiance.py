@@ -54,7 +54,7 @@ def poa_irradiance(
     # Ensure deterministic column order and clip negatives.
     columns = ["poa_global", "poa_direct", "poa_diffuse", "poa_ground_diffuse"]
     df = pd.DataFrame({col: poa.get(col) for col in columns}, index=dni.index)
-    df = df.apply(lambda s: s.where(s > -_NEG_EPS, 0.0))
+    df = df.apply(lambda s: s.where(s > -_NEG_EPS, 0.0).clip(lower=0.0))
 
     _emit_summary(debug, df)
     return df

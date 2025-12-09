@@ -77,9 +77,25 @@ class JsonlDebugWriter:
             pass
 
 
+class ScopedDebugCollector:
+    """Wrapper that injects fixed site/array context into every emit."""
+
+    def __init__(self, inner: DebugCollector, *, site: Optional[str] = None, array: Optional[str] = None):
+        self.inner = inner
+        self.site = site
+        self.array = array
+
+    def emit(self, stage: str, payload: Dict[str, Any], *, ts: Any, site: Optional[str] = None, array: Optional[str] = None) -> None:
+        # Prefer explicit overrides, otherwise fall back to scoped defaults.
+        eff_site = site if site is not None else self.site
+        eff_array = array if array is not None else self.array
+        self.inner.emit(stage, payload, ts=ts, site=eff_site, array=eff_array)
+
+
 __all__ = [
     "DebugCollector",
     "NullDebugCollector",
     "ListDebugCollector",
     "JsonlDebugWriter",
+    "ScopedDebugCollector",
 ]

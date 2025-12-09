@@ -15,9 +15,20 @@ def test_parse_fixture_tz_and_columns():
     results = provider._parse_single(data[0])
     assert isinstance(results.index, pd.DatetimeIndex)
     assert results.index.tz is not None
+    # Ensure we didn't mistakenly shift local timestamps by converting from UTC
+    first = results.index[0]
+    assert first.hour == 0 and first.day == 9 and first.month == 12 and first.year == 2025
     expected_cols = {"temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2"}
     assert expected_cols.issubset(results.columns)
     assert results.notna().all().all()
+
+
+def test_parse_converts_wind_kmh_to_ms_when_needed():
+    data = json.loads(FIXTURE.read_text())
+    provider = OpenMeteoWeatherProvider()
+    df = provider._parse_single(data[0])
+    # Fixture provides 10 km/h at first slot; expecting ~2.777... m/s when unit is km/h.
+    assert abs(df.iloc[0].wind_ms - 2.7777777) < 1e-6
 
 
 def test_parse_multi_location_map_ids():
@@ -38,5 +49,3 @@ def test_parse_multi_location_map_ids():
         results[params["location_ids"].split(",")[idx]] = df
     assert set(results.keys()) == {"loc1", "loc2"}
     assert all(not df.empty for df in results.values())
-
-

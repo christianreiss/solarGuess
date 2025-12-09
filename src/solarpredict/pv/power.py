@@ -89,7 +89,7 @@ def inverter_pdc0_from_dc_ac_ratio(pdc0_w: float, dc_ac_ratio: float, eta_inv_no
 
 def _emit_dc_summary(debug: DebugCollector, pdc: pd.Series) -> None:
     payload = {
-        "pdc0_w": float(pdc.max()) if not pdc.empty else 0.0,
+        "pdc_max_w": float(pdc.max()) if not pdc.empty else 0.0,
         "pdc_min": float(pdc.min()) if not pdc.empty else 0.0,
         "pdc_max": float(pdc.max()) if not pdc.empty else 0.0,
     }

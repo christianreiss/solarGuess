@@ -52,6 +52,8 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             params["minutely_15"] = hourly_vars
         else:
             params["hourly"] = hourly_vars
+        # Request wind in m/s to match downstream expectations (temp model assumes m/s).
+        params["wind_speed_unit"] = "ms"
         # echo ids back to parse by position; Open-Meteo doesn't support this yet but we keep for traceability
         params["location_ids"] = ",".join(ids)
         return params
@@ -72,13 +74,30 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             raise ValueError("Open-Meteo response missing time series block")
         time_values = time_block["time"]
         timezone = payload.get("timezone")
-        index = pd.to_datetime(time_values, utc=True)
-        if timezone:
+
+        # Open‑Meteo returns local times when `timezone=auto`. Parsing as UTC and then converting
+        # would shift the series by the offset (e.g., +1h for Europe/Berlin). Instead:
+        #   - parse strings as naive
+        #   - if API supplies a timezone, localize (not convert) the naive timestamps
+        #   - if timestamps are already tz-aware (e.g., when requesting `timezone=UTC`), honor them
+        index = pd.to_datetime(time_values)
+        if index.tz is None:
+            if timezone:
+                index = index.tz_localize(timezone)
+            else:
+                index = index.tz_localize("UTC")
+        elif timezone:
             index = index.tz_convert(timezone)
 
         data: Dict[str, List] = {}
         for api_key, col in _VAR_MAP.items():
-            data[col] = time_block.get(api_key, [])
+            series = time_block.get(api_key, [])
+            if api_key == "wind_speed_10m":
+                # API may return km/h if caller didn't request m/s; convert just in case.
+                units = payload.get("hourly_units", {}).get("wind_speed_10m")
+                if units == "km/h":
+                    series = [v / 3.6 if v is not None else None for v in series]
+            data[col] = series
         df = pd.DataFrame(data, index=index)
         df.index.name = "ts"
         return df
@@ -94,6 +113,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             raise ValueError("timestep must be '1h' or '15m'")
 
         params = self._build_params(locations, start, end, timestep)
+        params["wind_speed_unit"] = "ms"
         self.debug.emit("weather.request", {"url": self.base_url, "params": params}, ts=start)
         resp = self.session.get(self.base_url, params=params, timeout=30)
         resp.raise_for_status()

@@ -25,6 +25,7 @@ def test_build_params_multi_location():
     assert params["timezone"] == "auto"
     assert params["start_date"] == start
     assert params["end_date"] == end
+    assert params["wind_speed_unit"] == "ms"
     assert params["location_ids"] == "loc1,loc2"
 
 

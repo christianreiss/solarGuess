@@ -314,3 +314,7 @@ def main() -> None:  # pragma: no cover - thin wrapper for console_script
 
 
 __all__ = ["app", "main", "default_weather_provider"]
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

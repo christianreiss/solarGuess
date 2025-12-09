@@ -92,6 +92,7 @@ def test_debug_event_order():
     expected_order = [
         "weather.request",
         "weather.response_meta",
+        "weather.response_meta",
         "weather.summary",
         "stage.solarpos",
         "poa.summary",
