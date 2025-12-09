@@ -104,6 +104,32 @@ def test_pvarray_validation():
             gamma_pdc=-0.003,
             dc_ac_ratio=1.2,
             eta_inv_nom=0.96,
+            inverter_pdc0_w=-1.0,
+            losses_percent=14,
+            temp_model="noct",
+        )
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
+            inverter_pdc0_w=-1.0,
+            losses_percent=14,
+            temp_model="noct",
+        )
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
             losses_percent=120,
             temp_model="noct",
         )

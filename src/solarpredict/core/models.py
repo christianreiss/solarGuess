@@ -42,6 +42,7 @@ class PVArray:
     eta_inv_nom: float
     losses_percent: float
     temp_model: str
+    inverter_pdc0_w: Optional[float] = None
     inverter_group_id: Optional[str] = None
 
     def __post_init__(self):
@@ -59,6 +60,8 @@ class PVArray:
             raise ValidationError("dc_ac_ratio must be positive")
         if not (0 < self.eta_inv_nom <= 1):
             raise ValidationError("eta_inv_nom must be in (0, 1]")
+        if self.inverter_pdc0_w is not None and self.inverter_pdc0_w < 0:
+            raise ValidationError("inverter_pdc0_w must be non-negative when set")
         if not (0 <= self.losses_percent <= 100):
             raise ValidationError("losses_percent must be between 0 and 100")
         if not self.temp_model:

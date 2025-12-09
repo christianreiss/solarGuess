@@ -183,25 +183,37 @@ def simulate_day(
         for group_id, arr_ids in groups.items():
             pdc_sum = sum(array_data[a]["pdc"] for a in arr_ids)
 
-            pdc0_group = sum(array_data[a]["array"].pdc0_w for a in arr_ids)
-            dc_ac_ratio = max(array_data[a]["array"].dc_ac_ratio for a in arr_ids)
-            eta_inv_nom = max(array_data[a]["array"].eta_inv_nom for a in arr_ids)
-            pdc0_inv = inverter_pdc0_from_dc_ac_ratio(pdc0_group, dc_ac_ratio, eta_inv_nom)
+            explicit_sizes = {
+                array_data[a]["array"].inverter_pdc0_w for a in arr_ids if array_data[a]["array"].inverter_pdc0_w is not None
+            }
+
+            if explicit_sizes:
+                if len(explicit_sizes) > 1:
+                    raise ValueError(
+                        f"Arrays in inverter group '{group_id}' specify conflicting inverter_pdc0_w values: {sorted(explicit_sizes)}"
+                    )
+                pdc0_inv = explicit_sizes.pop()
+                # If user gave an AC nameplate (rare), we still respect eta_inv_nom to keep pac0=eta_inv_nom*pdc0_inv
+                eta_inv_nom = max(array_data[a]["array"].eta_inv_nom for a in arr_ids)
+            else:
+                pdc0_group = sum(array_data[a]["array"].pdc0_w for a in arr_ids)
+                dc_ac_ratio = max(array_data[a]["array"].dc_ac_ratio for a in arr_ids)
+                eta_inv_nom = max(array_data[a]["array"].eta_inv_nom for a in arr_ids)
+                pdc0_inv = inverter_pdc0_from_dc_ac_ratio(pdc0_group, dc_ac_ratio, eta_inv_nom)
 
             pac_group = pvwatts_ac(pdc_sum, pdc0_inv_w=pdc0_inv, eta_inv_nom=eta_inv_nom, debug=site_debug)
 
             # allocate by DC share per timestep; handle zeros
-            share = {}
-        share = {a: array_data[a]["pdc"] / pdc_sum.replace(0, pd.NA) for a in arr_ids}
-        for a in arr_ids:
-            pac_arr = pac_group * share[a].fillna(0)
-            array_data[a]["pac"] = pac_arr
+            share = {a: array_data[a]["pdc"] / pdc_sum.replace(0, pd.NA) for a in arr_ids}
+            for a in arr_ids:
+                pac_arr = pac_group * share[a].fillna(0)
+                array_data[a]["pac"] = pac_arr
 
         # Fallback for any array missing pac (shouldn't happen)
         for arr_id, data in array_data.items():
             if "pac" not in data:
                 array = data["array"]
-                pdc0_inv = inverter_pdc0_from_dc_ac_ratio(array.pdc0_w, array.dc_ac_ratio, array.eta_inv_nom)
+                pdc0_inv = array.inverter_pdc0_w or inverter_pdc0_from_dc_ac_ratio(array.pdc0_w, array.dc_ac_ratio, array.eta_inv_nom)
                 data["pac"] = pvwatts_ac(data["pdc"], pdc0_inv_w=pdc0_inv, eta_inv_nom=array.eta_inv_nom, debug=data["debug"])
 
         # Apply losses and aggregate per array
