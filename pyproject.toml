@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solarpredict"
+version = "0.1.0"
+description = "Day solar generation predictor with explainable debug output"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "pvlib>=0.10",
+    "typer>=0.9",
+    "PyYAML>=6.0",
+    "requests>=2.31",
+]
+
+[project.scripts]
+solarpredict = "solarpredict.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
