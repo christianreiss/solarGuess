@@ -1,0 +1,38 @@
+# Example combined scenario + MQTT configuration
+sites:
+  - id: example_site
+    location:
+      id: example_site
+      lat: 40.0
+      lon: -3.7
+      tz: Europe/Madrid
+    arrays:
+      - id: roof_main
+        inverter_group_id: main_inverter
+        tilt_deg: 30
+        azimuth_deg: 180
+        pdc0_w: 4000
+        gamma_pdc: -0.004
+        dc_ac_ratio: 0.9
+        eta_inv_nom: 0.96
+        losses_percent: 7
+        temp_model: close_mount_glass_glass
+
+mqtt:
+  input: live_results.json
+  host: 192.168.1.10
+  port: 1883
+  username: null
+  password: null
+  base_topic: solarguess
+  discovery_prefix: homeassistant
+  connect_retries: 3
+  retry_delay: 1.0
+  publish_topics: false
+  verbose: false
+
+run:
+  timestep: 15m
+  format: json
+  output: live_results.json
+  debug: live_debug.jsonl

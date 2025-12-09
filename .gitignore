@@ -14,7 +14,6 @@ dist/
 pytestcache/
 .pytest_cache/
 /etc/config.yaml
-/etc/config.example.yaml
 /live_results.json
 /live_debug.jsonl
 /live_results.json.bak.*
