@@ -185,9 +185,13 @@ def _load_existing(path: Path) -> List[Site]:
 
 @app.command()
 def run(
-    config: Path = typer.Option(..., exists=True, readable=True, help="Scenario YAML/JSON file"),
+    config: Path = typer.Option(Path("etc/config.yaml"), exists=True, readable=True, help="Scenario YAML/JSON file"),
     date: str = typer.Option(..., help="Target date (YYYY-MM-DD)"),
     timestep: str = typer.Option("1h", help="Forecast timestep, e.g. 1h or 15m"),
+    weather_label: str = typer.Option(
+        "end",
+        help="Meaning of weather timestamps: 'end' (backward-averaged, default), 'start' (forward-averaged), or 'center'.",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -213,6 +217,7 @@ def run(
         timestep=timestep,
         weather_provider=provider,
         debug=debug_collector,
+        weather_label=weather_label,
     )
 
     daily = result.daily

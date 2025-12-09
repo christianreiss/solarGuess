@@ -12,6 +12,7 @@ def solar_position(
     location: Location,
     times: pd.DatetimeIndex,
     debug: DebugCollector | None = None,
+    site_id: str | None = None,
 ) -> pd.DataFrame:
     """Compute solar position for a location at the given times.
 
@@ -43,7 +44,8 @@ def solar_position(
     if missing:
         raise RuntimeError(f"pvlib missing expected columns: {missing}")
 
-    _emit_summary(debug, df, location.id)
+    # Prefer explicit site_id when provided to keep IDs consistent with Scenario.site.id
+    _emit_summary(debug, df, site_id or location.id)
     return df[expected_cols + [c for c in df.columns if c not in expected_cols]]
 
 

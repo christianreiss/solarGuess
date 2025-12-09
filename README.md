@@ -14,7 +14,7 @@ Dependencies: pvlib, pandas, requests, PyYAML, typer. Default weather provider (
 
 ## Quick start
 
-1) Create a scenario file `scenario.yaml`:
+1) Create a combined config `etc/config.yaml` (includes scenario + MQTT + run defaults):
 
 ```yaml
 sites:
@@ -40,7 +40,9 @@ sites:
 
 ```bash
 PYTHONPATH=src \
-python -m solarpredict.cli run --config scenario.yaml --date 2025-06-01 --timestep 1h --format json --output results.json
+python -m solarpredict.cli run --config etc/config.yaml --date 2025-06-01
+# If your weather API uses backward-averaged timestamps (Open-Meteo), the default `--weather-label end`
+# keeps solar geometry aligned. Use `--weather-label start` if your data is forward-averaged.
 ```
 
 Add `--debug debug.jsonl` to emit deterministic JSONL events for every stage.
@@ -75,6 +77,33 @@ PYTHONPATH=src pytest -q
 ```
 
 Tests are fixture-driven where possible; network calls are acceptable when required by a provider.
+
+## Publish to Home Assistant via MQTT
+
+After `cron.sh` writes `live_results.json`, publish to Home Assistant MQTT with change/freshness guards:
+
+```bash
+PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt \
+  --config etc/config.yaml \
+  --verbose --force
+
+# Skip publishing the retained state blob (only scalars)
+PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt \
+  --config etc/config.yaml \
+  --publish-topics --no-state --force
+```
+
+Behavior:
+- Publishes only if the local `generated_at` is newer **and** the content changed (ignores timestamp-only churn).
+- Publishes HA discovery for `sensor.solarguess_forecast`; state is `total_energy_kwh`, attributes mirror `results`.
+- Uses retained messages on `solarguess/forecast` and availability at `solarguess/availability`.
+- New hierarchical payload (`meta` + `sites[].arrays[]`) is normalized before publish; totals are auto-filled if missing.
+- To recover from a stuck/unavailable entity, clear retained once then republish:
+  ```bash
+  mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/forecast
+  mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/availability
+  PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt --config etc/config.yaml --verbose --force
+  ```
 
 ## Debugging and auditing
 

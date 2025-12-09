@@ -590,3 +590,230 @@
 {"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
 {"array": "playhouse", "payload": {"losses_percent": 7.0, "pac_net_max": 36.73164771382004, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
 {"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"locations": ["home_solingen"], "timestep": "1h"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"params": {"end_date": "2025-12-10", "hourly": "temperature_2m,wind_speed_10m,shortwave_radiation,diffuse_radiation,direct_normal_irradiance", "latitude": "51.17133", "location_ids": "home_solingen", "longitude": "6.98786", "start_date": "2025-12-09", "timezone": "auto", "wind_speed_unit": "ms"}, "url": "https://api.open-meteo.com/v1/forecast"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"model": null, "time_key": "hourly", "timezone": "Europe/Berlin"}, "site": "home_solingen", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 103.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 9.0}, "site": "home_solingen", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"timestep_seconds": 3600.0, "timezone": "Europe/Berlin"}, "site": "home_solingen", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 103.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 10.3}, "site": "home_solingen", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"elevation_max": 15.952570790558783, "elevation_min": -61.62362180521495, "has_nans": false, "zenith_max": 151.62362180521495, "zenith_min": 74.04742920944122}, "site": "solingen_home", "stage": "solar_position.summary", "ts": "2025-12-09T00:30:00+01:00"}
+{"array": null, "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.solarpos", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"poa_global_max": 251.74671827064714, "poa_wh_m2": 599.6415539549682}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"temp_cell_max": 23.942947016991834, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pdc_max": 1354.8149890162254, "pdc_max_w": 1354.8149890162254, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pac0_w": 11908.888888888889, "pac_max": 1255.1519666124555, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 1167.2913289495834, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pdc_max": 152.24398630401151, "pdc_max_w": 152.24398630401151, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 78.83358184929153, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 73.31523111984112, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"poa_global_max": 61.88924983588679, "poa_wh_m2": 214.10794612392715}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"temp_cell_max": 15.402674971583618, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pdc_max": 310.4006011885515, "pdc_max_w": 310.4006011885515, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pac0_w": 12075.0, "pac_max": 230.7684629109246, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 214.61467050715987, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pdc_max": 152.24398630401151, "pdc_max_w": 152.24398630401151, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 78.83358184929153, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 73.31523111984112, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pdc_max": 505.45003452931826, "pdc_max_w": 505.45003452931826, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pac0_w": 11857.142857142857, "pac_max": 423.433545854234, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"losses_percent": 7.0, "pac_net_max": 393.7931976444376, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"poa_global_max": 221.2125346526248, "poa_wh_m2": 549.2609170129344}, "site": "home_solingen", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "home_solingen", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"temp_cell_max": 22.627813546924596, "temp_cell_min": 10.3}, "site": "home_solingen", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"pdc_max": 111.65578208221926, "pdc_max_w": 111.65578208221926, "pdc_min": 0.0}, "site": "home_solingen", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"pac0_w": 12500.0, "pac_max": 33.10425304165639, "pac_min": 0.0}, "site": "home_solingen", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"losses_percent": 7.0, "pac_net_max": 30.786955328740444, "pac_net_min": 0.0}, "site": "home_solingen", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "home_solingen", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"locations": ["zirpennest"], "timestep": "1h"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"params": {"end_date": "2025-12-10", "hourly": "temperature_2m,wind_speed_10m,shortwave_radiation,diffuse_radiation,direct_normal_irradiance", "latitude": "51.17133", "location_ids": "zirpennest", "longitude": "6.98786", "start_date": "2025-12-09", "timezone": "auto", "wind_speed_unit": "ms"}, "url": "https://api.open-meteo.com/v1/forecast"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"model": null, "time_key": "hourly", "timezone": "Europe/Berlin"}, "site": "zirpennest", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 103.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 9.0}, "site": "zirpennest", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"timestep_seconds": 3600.0, "timezone": "Europe/Berlin"}, "site": "zirpennest", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 103.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 10.3}, "site": "zirpennest", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"elevation_max": 15.952570790558783, "elevation_min": -61.62362180521495, "has_nans": false, "zenith_max": 151.62362180521495, "zenith_min": 74.04742920944122}, "site": "zirpennest", "stage": "solar_position.summary", "ts": "2025-12-09T00:30:00+01:00"}
+{"array": null, "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.solarpos", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"poa_global_max": 251.74671827064714, "poa_wh_m2": 599.6415539549682}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"temp_cell_max": 23.942947016991834, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pdc_max": 1354.8149890162254, "pdc_max_w": 1354.8149890162254, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pac0_w": 11908.888888888889, "pac_max": 1255.1519666124555, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 1167.2913289495834, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pdc_max": 152.24398630401151, "pdc_max_w": 152.24398630401151, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 78.83358184929153, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 73.31523111984112, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"poa_global_max": 61.88924983588679, "poa_wh_m2": 214.10794612392715}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"temp_cell_max": 15.402674971583618, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pdc_max": 310.4006011885515, "pdc_max_w": 310.4006011885515, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pac0_w": 12075.0, "pac_max": 230.7684629109246, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 214.61467050715987, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pdc_max": 152.24398630401151, "pdc_max_w": 152.24398630401151, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 78.83358184929153, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 73.31523111984112, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"poa_global_max": 98.34683120473967, "poa_wh_m2": 308.62846785652505}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"temp_cell_max": 16.994760720746104, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pdc_max": 505.45003452931826, "pdc_max_w": 505.45003452931826, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pac0_w": 11857.142857142857, "pac_max": 423.433545854234, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"losses_percent": 7.0, "pac_net_max": 393.7931976444376, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"poa_global_max": 221.2125346526248, "poa_wh_m2": 549.2609170129344}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"temp_cell_max": 22.627813546924596, "temp_cell_min": 10.3}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"pdc_max": 111.65578208221926, "pdc_max_w": 111.65578208221926, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"pac0_w": 12500.0, "pac_max": 33.10425304165639, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"losses_percent": 7.0, "pac_net_max": 30.786955328740444, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 24}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"locations": ["zirpennest"], "timestep": "15m"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"params": {"end_date": "2025-12-10", "latitude": "51.17133", "location_ids": "zirpennest", "longitude": "6.98786", "minutely_15": "temperature_2m,wind_speed_10m,shortwave_radiation,diffuse_radiation,direct_normal_irradiance", "start_date": "2025-12-09", "timezone": "auto", "wind_speed_unit": "ms"}, "url": "https://api.open-meteo.com/v1/forecast"}, "site": null, "stage": "weather.request", "ts": "2025-12-09"}
+{"array": null, "payload": {"model": null, "time_key": "minutely_15", "timezone": "Europe/Berlin"}, "site": "zirpennest", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 106.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 9.1}, "site": "zirpennest", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"timestep_seconds": 900.0, "timezone": "Europe/Berlin"}, "site": "zirpennest", "stage": "weather.response_meta", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"ghi_max": 106.0, "ghi_min": 0.0, "temp_max": 13.1, "temp_min": 10.2}, "site": "zirpennest", "stage": "weather.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"elevation_max": 15.961848458275412, "elevation_min": -61.64311985375885, "has_nans": false, "zenith_max": 151.64311985375883, "zenith_min": 74.03815154172459}, "site": "zirpennest", "stage": "solar_position.summary", "ts": "2025-12-08T23:52:30+01:00"}
+{"array": null, "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.solarpos", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"poa_global_max": 198.60094498659933, "poa_wh_m2": 603.8698132687367}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"temp_cell_max": 21.472811591212693, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pdc_max": 1079.3184454436284, "pdc_max_w": 1079.3184454436284, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"poa_global_max": 106.00974644170284, "poa_wh_m2": 369.44820060224106}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"temp_cell_max": 17.298422645756645, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pdc_max": 163.97069724049888, "pdc_max_w": 163.97069724049888, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"poa_global_max": 64.25709496481285, "poa_wh_m2": 250.60257641857757}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"temp_cell_max": 15.438616894719607, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pdc_max": 322.28810980529886, "pdc_max_w": 322.28810980529886, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"poa_global_max": 106.00974644170284, "poa_wh_m2": 369.44820060224106}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"temp_cell_max": 17.298422645756645, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pdc_max": 163.97069724049888, "pdc_max_w": 163.97069724049888, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"poa_global_max": 106.00974644170284, "poa_wh_m2": 369.44820060224106}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"temp_cell_max": 17.298422645756645, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pdc_max": 544.3827148384563, "pdc_max_w": 544.3827148384563, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"poa_global_max": 190.02715905063866, "poa_wh_m2": 577.2927873269898}, "site": "zirpennest", "stage": "poa.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.poa", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"a": -2.98, "b": -0.0471, "deltaT": 1.0}, "site": "zirpennest", "stage": "temp_model.params", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"temp_cell_max": 21.098398317141953, "temp_cell_min": 10.2}, "site": "zirpennest", "stage": "temp_cell.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.temp", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"pdc_max": 96.49640009240073, "pdc_max_w": 96.49640009240073, "pdc_min": 0.0}, "site": "zirpennest", "stage": "pv.dc.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.dc", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 11908.888888888889, "pac_max": 985.4825654886065, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 11538.461538461537, "pac_max": 90.34441083317358, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 12075.0, "pac_max": 242.4325268653971, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 11538.461538461537, "pac_max": 90.34441083317358, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 11857.142857142857, "pac_max": 461.6126242127124, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": null, "payload": {"pac0_w": 12500.0, "pac_max": 18.221421086096708, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"pac0_w": 11908.888888888889, "pac_max": 985.4825654886065, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 90.34441083317358, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"pac0_w": 12075.0, "pac_max": 242.4325268653971, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"pac0_w": 11538.461538461537, "pac_max": 90.34441083317358, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"pac0_w": 11857.142857142857, "pac_max": 461.6126242127124, "pac_min": 0.0}, "site": "zirpennest", "stage": "pv.ac.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 916.498785904404, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 84.02030207485143, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_south_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"losses_percent": 7.0, "pac_net_max": 225.4622499848193, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_primary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"losses_percent": 7.0, "pac_net_max": 84.02030207485143, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "pv_array_north_secondary", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"losses_percent": 7.0, "pac_net_max": 429.2997405178225, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "solarfarm", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.ac", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"losses_percent": 7.0, "pac_net_max": 16.945921610069938, "pac_net_min": 0.0}, "site": "zirpennest", "stage": "pv.losses.summary", "ts": "2025-12-09T00:00:00+01:00"}
+{"array": "playhouse", "payload": {"rows": 96}, "site": "zirpennest", "stage": "stage.aggregate", "ts": "2025-12-09T00:00:00+01:00"}

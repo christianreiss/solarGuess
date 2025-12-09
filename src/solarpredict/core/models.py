@@ -42,6 +42,7 @@ class PVArray:
     eta_inv_nom: float
     losses_percent: float
     temp_model: str
+    inverter_group_id: Optional[str] = None
 
     def __post_init__(self):
         if not self.id:

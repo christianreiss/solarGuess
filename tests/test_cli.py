@@ -13,7 +13,7 @@ runner = CliRunner()
 
 
 def _write_fixture(tmp_path: Path) -> Path:
-    cfg = tmp_path / "scenario.yaml"
+    cfg = tmp_path / "config.yaml"
     cfg.write_text(
         "sites:\n"
         "- id: site1\n"
@@ -92,7 +92,7 @@ def test_run_command_smoke(monkeypatch, tmp_path):
 
 
 def test_config_command_add_edit_delete(monkeypatch, tmp_path):
-    path = tmp_path / "scenario.yaml"
+    path = tmp_path / "config.yaml"
 
     inputs = iter(
         [

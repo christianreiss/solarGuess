@@ -62,7 +62,7 @@ def test_two_sites_two_arrays_energy_matches_constant_weather():
     date = dt.date(2025, 6, 1)
     wx = DummyWeatherProvider(ghi=800.0, dni=500.0, dhi=300.0, temp=25.0, wind=1.0)
 
-    result = simulate_day(scenario, date, timestep="1h", weather_provider=wx)
+    result = simulate_day(scenario, date, timestep="1h", weather_provider=wx, weather_label="end")
 
     # With constant inputs, expect same number of records and non-zero energy.
     assert len(result.daily) == 2
@@ -85,7 +85,7 @@ def test_debug_event_order():
     wx = DummyWeatherProvider()
     debug = ListDebugCollector()
 
-    simulate_day(scenario, date, timestep="1h", weather_provider=wx, debug=debug)
+    simulate_day(scenario, date, timestep="1h", weather_provider=wx, debug=debug, weather_label="end")
 
     stages = [e["stage"] for e in debug.events]
     # ensure ordering from weather to aggregate appears
