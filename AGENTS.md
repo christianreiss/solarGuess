@@ -53,6 +53,10 @@ Every task is one module end-to-end: design → code → tests → docs (as need
 > - One PR per task. Do not mix tasks.
 > - The PR must describe what changed, what tests ran, and include a small debug excerpt.
 
+## Testing policy update
+
+- It is acceptable for tests to hit the network when necessary. Prefer fixtures for determinism and speed, but don’t block legitimate network use.
+
 GitHub PR creation via `gh pr create` and the `--base/--head` flags are documented by GitHub. :contentReference[oaicite:1]{index=1}
 
 ## PR template (paste into PR body)
@@ -75,4 +79,3 @@ GitHub PR creation via `gh pr create` and the `--base/--head` flags are document
 ### Debug sample (JSONL)
 ```json
 {"stage":"...","site":"...","array":"...","ts":"...","data":{...}}
-
