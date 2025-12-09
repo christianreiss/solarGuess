@@ -108,3 +108,16 @@ Behavior:
 ## Debugging and auditing
 
 All modules emit structured debug events. Use `--debug <file>` on the CLI or pass a `JsonlDebugWriter` into the engine to capture per-stage payloads for diffing and audits.
+
+## Calculation workflow (technical)
+
+1) **Weather ingest** — fetch hourly/15m GHI, DNI, DHI, air temp, wind (Open‑Meteo). Timestamps are treated as *end-labelled* by default (`--weather-label end`) to match Open‑Meteo’s backward-averaged semantics.
+2) **Step detection** — infer timestep seconds via the median delta of the time index; used downstream for integration and midpoint shifts.
+3) **Solar position** — compute sun az/zenith per timestamp with pvlib using tz-aware times.
+4) **Plane-of-array irradiance** — Perez transposition with `dni_extra` and negative clipping to get POA on each array’s tilt/azimuth.
+5) **Cell temperature** — pvlib SAPM model using POA + ambient temp + wind (m/s).
+6) **DC power** — PVWatts DC per array with `pdc0_w` and `gamma_pdc`.
+7) **Inverter AC + clipping** — PVWatts inverter using either explicit AC rating or derived from `dc_ac_ratio`; lumped `losses_percent` applied afterward.
+8) **Energy integration** — sum AC power * timestep hours for each array; aggregate per site and total.
+9) **Debug emission** — optional JSONL per stage/site/array for auditability.
+10) **Publishing** — write hierarchical results JSON; optional MQTT: retained state blob (if enabled) plus per-array scalar topics for HA/consumers.
