@@ -17,3 +17,4 @@ pytestcache/
 /etc/config.example.yaml
 /live_results.json
 /live_debug.jsonl
+/live_results.json.bak.*
