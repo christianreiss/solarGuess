@@ -3,4 +3,5 @@
 __all__ = [
     "position",
     "irradiance",
+    "temperature",
 ]
