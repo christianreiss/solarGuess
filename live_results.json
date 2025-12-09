@@ -1,5 +1,5 @@
 {
-  "generated_at": "2025-12-09T15:14:27.910988+00:00",
+  "generated_at": "2025-12-09T15:15:52.405492+00:00",
   "date": "2025-12-09",
   "timestep": "1h",
   "provider": "open-meteo",
@@ -8,7 +8,7 @@
       "site": "home_solingen",
       "array": "pv_array_south_primary",
       "date": "2025-12-09",
-      "energy_kwh": 2.6344112695,
+      "energy_kwh": 2.6,
       "peak_kw": 1.2406717565,
       "poa_kwh_m2": 0.6260989055,
       "temp_cell_max": 24.0853496386
@@ -17,7 +17,7 @@
       "site": "home_solingen",
       "array": "pv_array_south_secondary",
       "date": "2025-12-09",
-      "energy_kwh": 0.1291526191,
+      "energy_kwh": 0.1,
       "peak_kw": 0.0732808093,
       "poa_kwh_m2": 0.3113494977,
       "temp_cell_max": 17.0586608889
@@ -26,7 +26,7 @@
       "site": "home_solingen",
       "array": "pv_array_north_primary",
       "date": "2025-12-09",
-      "energy_kwh": 0.564709792,
+      "energy_kwh": 0.6,
       "peak_kw": 0.2144898981,
       "poa_kwh_m2": 0.2149204805,
       "temp_cell_max": 15.5170279162
@@ -35,7 +35,7 @@
       "site": "home_solingen",
       "array": "pv_array_north_secondary",
       "date": "2025-12-09",
-      "energy_kwh": 0.1291526191,
+      "energy_kwh": 0.1,
       "peak_kw": 0.0732808093,
       "poa_kwh_m2": 0.3113494977,
       "temp_cell_max": 17.0586608889
@@ -44,7 +44,7 @@
       "site": "home_solingen",
       "array": "solarfarm",
       "date": "2025-12-09",
-      "energy_kwh": 1.0542902948,
+      "energy_kwh": 1.1,
       "peak_kw": 0.3936790233,
       "poa_kwh_m2": 0.3113494977,
       "temp_cell_max": 17.0586608889
@@ -53,7 +53,7 @@
       "site": "home_solingen",
       "array": "playhouse",
       "date": "2025-12-09",
-      "energy_kwh": 0.047427536,
+      "energy_kwh": 0.0,
       "peak_kw": 0.0367316477,
       "poa_kwh_m2": 0.5707266678,
       "temp_cell_max": 22.7025263986

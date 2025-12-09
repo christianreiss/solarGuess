@@ -32,6 +32,12 @@ from datetime import timezone
 date = sys.argv[1]
 out_path = pathlib.Path(sys.argv[2])
 data = json.loads(out_path.read_text())
+
+# Round energy counters to 1 decimal for readability/consistency.
+for rec in data:
+    if "energy_kwh" in rec:
+        rec["energy_kwh"] = round(rec["energy_kwh"], 1)
+
 payload = {
     "generated_at": dt.datetime.now(timezone.utc).isoformat(),
     "date": date,
