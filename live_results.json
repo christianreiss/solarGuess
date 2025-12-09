@@ -1,8 +1,9 @@
 {
-  "generated_at": "2025-12-09T15:16:27.286776+00:00",
+  "generated_at": "2025-12-09T15:17:03.716939+00:00",
   "date": "2025-12-09",
   "timestep": "1h",
   "provider": "open-meteo",
+  "total_energy_kwh": 4.5,
   "results": [
     {
       "site": "home_solingen",

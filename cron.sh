@@ -49,6 +49,7 @@ payload = {
     "date": date,
     "timestep": "1h",
     "provider": "open-meteo",
+    "total_energy_kwh": round(sum(r.get("energy_kwh", 0) for r in data), 1),
     "results": data,
 }
 out_path.write_text(json.dumps(payload, indent=2))
