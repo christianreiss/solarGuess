@@ -222,18 +222,24 @@ PVWatts DC model formula is explicitly documented in pvlib ([pvlib-python.readth
 
 ---
 
-### Task 8: `cli` module (run + outputs + debug switch)
+### Task 8: `cli` module (split into 3 sub-tasks)
 
 **Goal:** Human-usable entrypoint.
 
-**Implement**
+**Task 8.1: CLI scaffold**
 
-* `cli.py` (Typer or argparse)
+* add `cli.py` with Typer/argparse wiring, version/--help, and placeholder commands
+* baseline test: CLI imports and `--help` exits 0
 
-  * `run --config scenario.yaml --date YYYY-MM-DD --timestep 1h --debug out.jsonl --format json|csv`
-  * prints summary + writes output file
-  * debug optional: if set, write JSONL via `JsonlDebugWriter`
+**Task 8.2: `run` command**
 
-**Tests**
+* implement `run --config scenario.yaml --date YYYY-MM-DD --timestep 1h --debug out.jsonl --format json|csv`
+* prints summary + writes output file
+* debug optional: if set, write JSONL via `JsonlDebugWriter`
+* smoke test: fixture config + fixture weather provider (dependency injected), exits 0, produces output files
 
-* `tests/cli/test_run_smoke.py`: runs with fixture config + fixture weather provider (dependency injected), exits 0, produces output files.
+**Task 8.3: `config` command (interactive setup)**
+
+* interactive add/edit/delete of scenario parts (sites, arrays, location fields) and save to YAML/JSON
+* validation reuse from `core.config`
+* tests to cover add/edit/delete flows without actual tty (e.g., simulate input)
