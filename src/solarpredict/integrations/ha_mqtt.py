@@ -186,7 +186,7 @@ def _hash_payload(data: Dict[str, Any]) -> str:
 
 
 def _should_publish(local: Dict[str, Any], remote: Optional[Dict[str, Any]]) -> bool:
-    """Return True only when data is newer (based on generated_at)."""
+    """Return True when data is newer OR materially different (hash), even if timestamps tie."""
 
     def _extract_ts(payload: Optional[Dict[str, Any]]) -> Optional[dt.datetime]:
         if not payload:
@@ -195,15 +195,29 @@ def _should_publish(local: Dict[str, Any], remote: Optional[Dict[str, Any]]) -> 
             return _parse_ts(payload["meta"].get("generated_at"))
         return _parse_ts(payload.get("generated_at"))
 
+    def _payload_hash(payload: Optional[Dict[str, Any]]) -> Optional[str]:
+        if payload is None:
+            return None
+        try:
+            return _hash_payload(_canonical_payload(payload))
+        except Exception:
+            return None
+
     local_ts = _extract_ts(local)
     remote_ts = _extract_ts(remote)
+    local_hash = _payload_hash(local)
+    remote_hash = _payload_hash(remote)
 
     # If we cannot determine timestamps, err on publishing to avoid missing updates.
     if local_ts is None:
         return True
     if remote_ts is None:
         return True
-    return local_ts > remote_ts
+    if local_ts > remote_ts:
+        return True
+    if local_ts == remote_ts and local_hash is not None and remote_hash is not None and local_hash != remote_hash:
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
