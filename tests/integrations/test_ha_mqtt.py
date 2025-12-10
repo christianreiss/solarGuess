@@ -217,6 +217,20 @@ def test_can_skip_state_but_still_publish_topics(tmp_path: Path):
     assert any(t.startswith("sg/s/a1/energy_kwh") for t in topics)
 
 
+def test_skip_if_fresh_uses_datetime_comparison(tmp_path: Path):
+    """Regression: lexicographic string compare mis-orders single-digit months."""
+    inp = tmp_path / "live.json"
+    # Local appears lexicographically larger but is chronologically older.
+    inp.write_text(json.dumps(sample_payload(generated_at="2025-02-10T12:00:00+00:00")))
+    bridge = DummyBridge()
+    cfg = MqttConfig(base_topic="sg")
+    bridge.retained = sample_payload(generated_at="2025-12-09T12:00:00+00:00")
+    published = publish_forecast(inp, cfg, bridge=bridge, skip_if_fresh=True)
+    assert published is False  # should skip because remote is newer
+    # Only availability should have been published.
+    assert bridge.published == [("availability", True, True)]
+
+
 def test_merge_config_prefers_nested_mqtt(tmp_path: Path):
     cfg_path = sample_config(tmp_path)
     args = type("Args", (), {

@@ -467,14 +467,24 @@ def publish_forecast(
             with bridge.session():
                 remote = bridge.get_retained_json(cfg.state_topic) if cfg.publish_state else None
 
+                bridge.publish_availability(True)
+
                 if skip_if_fresh and remote is not None:
-                    local_ts = normalized.get("meta", {}).get("generated_at")
-                    remote_ts = remote.get("meta", {}).get("generated_at") if "meta" in remote else remote.get("generated_at")
+                    def _ts(payload: Optional[Dict[str, Any]]):
+                        if not payload:
+                            return None
+                        if "meta" in payload:
+                            return _parse_ts(payload["meta"].get("generated_at"))
+                        return _parse_ts(payload.get("generated_at"))
+
+                    local_ts = _ts(normalized)
+                    remote_ts = _ts(remote)
                     if local_ts and remote_ts and local_ts <= remote_ts and not force:
                         if cfg.verbose:
-                            print(f"[ha_mqtt] skip_if_fresh: remote is newer or equal (remote={remote_ts}, local={local_ts})")
+                            print(
+                                f"[ha_mqtt] skip_if_fresh: remote is newer or equal (remote={remote_ts.isoformat()}, local={local_ts.isoformat()})"
+                            )
                         return False
-                bridge.publish_availability(True)
 
                 def extract_ts(payload):
                     if not payload:
