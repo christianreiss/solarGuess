@@ -304,7 +304,7 @@ PYTHONPATH=src python -m solarpredict.cli publish-mqtt \
 - Publishes to `solarguess/forecast` and `solarguess/availability` with retained messages.
 - Discovery payload registers `sensor.solarguess_forecast` whose state is `total_energy_kwh`; attributes mirror the per-site/array breakdown.
 - Publishing only proceeds when the local `generated_at` is newer *and* the payload changed (prevents timestamp churn).
-- Use `--publish-topics --no-state` to emit only scalar topics (skip retained blob).
+- Safety guard: discovery/state must travel together. If you set `publish_state: false`, also set `publish_discovery: false`; otherwise the CLI will refuse `--publish-topics` because HA would reference an unwritten state topic.
 - Recovery procedure for stuck entities:
 
   ```bash

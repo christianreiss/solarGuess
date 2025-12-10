@@ -693,6 +693,8 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
     input_path = Path(mqtt_cfg.get("input", file_cfg.get("input", args.input)))
     publish_state_cfg = bool(mqtt_cfg.get("publish_state", True))
     publish_state = publish_state_cfg and not bool(getattr(args, "no_state", False))
+    publish_topics_cfg = bool(choose("publish_topics", mqtt_cfg.get("publish_topics", False)))
+    publish_discovery_cfg = bool(choose("publish_discovery", mqtt_cfg.get("publish_discovery", True)))
 
     cfg = MqttConfig(
         host=choose("mqtt_host", mqtt_cfg.get("host", "localhost")),
@@ -705,9 +707,16 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
         retry_delay_sec=float(choose("retry_delay", mqtt_cfg.get("retry_delay", 1.0))),
         verbose=bool(choose("verbose", mqtt_cfg.get("verbose", False))),
         publish_state=publish_state,
-        publish_topics=bool(choose("publish_topics", mqtt_cfg.get("publish_topics", False))),
-        publish_discovery=bool(choose("publish_discovery", mqtt_cfg.get("publish_discovery", True))),
+        publish_topics=publish_topics_cfg,
+        publish_discovery=publish_discovery_cfg,
     )
+
+    if cfg.publish_topics and not cfg.publish_state and cfg.publish_discovery:
+        raise ValueError(
+            "Invalid MQTT config: --publish-topics (or mqtt.publish_topics) requires publish_state "
+            "unless discovery is disabled (publish_discovery: false). "
+            "Otherwise Home Assistant discovery would point at an unwritten state topic."
+        )
     return input_path, cfg
 
 
