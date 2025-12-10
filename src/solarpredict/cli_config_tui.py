@@ -120,7 +120,7 @@ def _select_prev(state: EditorState) -> None:
 
 def _prompt_location(existing: Optional[Location]) -> Optional[Location]:
     def ask(label: str, default: str) -> Optional[str]:
-        return input_dialog(title="Location", text=label, default=default).run()
+        return input_dialog(title="Location", text=label, default=default).run(in_thread=True)
 
     lat = ask("Latitude", str(existing.lat if existing else 0.0))
     if lat is None:
@@ -147,7 +147,7 @@ def _prompt_location(existing: Optional[Location]) -> Optional[Location]:
 
 def _prompt_array(existing: Optional[PVArray]) -> Optional[PVArray]:
     def ask(label: str, default: str) -> Optional[str]:
-        return input_dialog(title="Array", text=label, default=default).run()
+        return input_dialog(title="Array", text=label, default=default).run(in_thread=True)
 
     arr_id = ask("Array id", existing.id if existing else "array1")
     if arr_id is None:
@@ -198,7 +198,7 @@ def _prompt_array(existing: Optional[PVArray]) -> Optional[PVArray]:
 
 
 def _prompt_site(existing: Optional[Site]) -> Optional[Site]:
-    site_id = input_dialog(title="Site", text="Site id", default=existing.id if existing else "site1").run()
+    site_id = input_dialog(title="Site", text="Site id", default=existing.id if existing else "site1").run(in_thread=True)
     if site_id is None:
         return None
     loc = _prompt_location(existing.location if existing else None)
