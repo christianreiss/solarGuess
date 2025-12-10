@@ -16,7 +16,7 @@ Core idea: forecast weather + irradiance → sun position → plane-of-array irr
 - All code paths support **debug emission** (structured, deterministic JSON).
 
 ## Repo workflow (MANDATORY per task)
-Every task is one module end-to-end: design → code → tests → docs (as needed) → PR.
+Every task is one module end-to-end: design → code → tests → docs (as needed) → commit (no PRs).
 
 ### Task checklist (do these in order)
 1) **Understand the overall goal**
@@ -28,12 +28,9 @@ Every task is one module end-to-end: design → code → tests → docs (as need
 3) **Understand the goal for the current task**
    - Read the task description (see “Task map” below).
    - Define “done” in concrete terms (public API + tests + debug).
-4) **Branch out in git**
-   - Start from updated default branch:
-     - `git checkout main`
-     - `git pull --ff-only`
-   - Create a task branch:
-     - `git checkout -b task/<NN>-<short-slug>`
+4) **Branch (optional) or stay on main**
+   - Default: keep history linear on `main`.
+   - If you need isolation, create `task/<NN>-<short-slug>` from updated `main` and fast-forward merge when done.
 5) **Implement fully**
    - Build the module from scratch (or extend it) with clear interfaces.
    - Add/update fixtures and unit tests.
@@ -42,16 +39,9 @@ Every task is one module end-to-end: design → code → tests → docs (as need
    - Run syntax check: `python -m compileall src`
    - Run unit tests: `pytest -q`
    - Fix failures until green.
-7) **Push + create a PR (required)**
-   - Push branch:
-     - `git push -u origin task/<NN>-<short-slug>`
-   - Create PR (prefer GitHub CLI):
-     - `gh pr create --base main --head task/<NN>-<short-slug> --title "Task <NN>: <title>" --body "<PR template below>"`
-   - If `gh` isn’t available, push the branch and include PR-ready title/body in the final output/log so a human can paste it into the GitHub UI.
-
-> Notes on PRs:
-> - One PR per task. Do not mix tasks.
-> - The PR must describe what changed, what tests ran, and include a small debug excerpt.
+7) **Commit (no PR step)**
+   - Use descriptive commit messages: `git commit -am "Task <NN>: <title>"` (or multiple small commits if it aids review).
+   - Push to `main` (or your task branch, then fast-forward `main`). Keep commits clean; avoid merge commits if possible.
 
 ## Testing policy update
 
@@ -59,23 +49,10 @@ Every task is one module end-to-end: design → code → tests → docs (as need
 
 GitHub PR creation via `gh pr create` and the `--base/--head` flags are documented by GitHub. :contentReference[oaicite:1]{index=1}
 
-## PR template (paste into PR body)
-### What
-- Implements Task <NN>: <short summary>
-
-### Why
-- <why this module exists / what it unlocks>
-
-### How
-- Public API:
-  - `...`
-- Key decisions:
-  - `...`
-
-### Tests run
-- `python -m compileall src`
-- `pytest -q`
-
-### Debug sample (JSONL)
-```json
-{"stage":"...","site":"...","array":"...","ts":"...","data":{...}}
+## Commit note (replace PR template)
+Include in commit message or accompanying note:
+- What: Implements Task <NN> with a short summary.
+- Why: What this module unlocks.
+- How: Public API + key decisions.
+- Tests run: list commands (e.g., `python -m compileall src`, `pytest -q`).
+- Debug sample: one JSONL line showing emitted structure.

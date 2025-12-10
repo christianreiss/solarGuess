@@ -270,12 +270,20 @@ PYTHONPATH=src pytest -q
 
 ## Home Assistant / MQTT integration
 
-After a daily run (for example via `cron.sh` writing `live_results.json`), publish to Home Assistant using the provided script:
+After a daily run (write `live_results.json` with your scheduler), publish to Home Assistant using the main CLI:
 
 ```bash
-PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt \
+# simulate + publish (topics only by default)
+PYTHONPATH=src python -m solarpredict.cli run \
   --config etc/config.yaml \
-  --verbose --force
+  --date 2025-12-10 \
+  --timestep 15m \
+  --format json \
+  --output live_results.json
+
+PYTHONPATH=src python -m solarpredict.cli publish-mqtt \
+  --config etc/config.yaml \
+  --verify --publish-retries 3 --retry-delay 2 --skip-if-fresh
 ```
 
 - Publishes to `solarguess/forecast` and `solarguess/availability` with retained messages.
@@ -287,8 +295,13 @@ PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt \
   ```bash
   mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/forecast
   mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/availability
-  PYTHONPATH=src python -m solarpredict.integrations.ha_mqtt --config etc/config.yaml --verbose --force
+  PYTHONPATH=src python -m solarpredict.cli publish-mqtt --config etc/config.yaml --verbose --force
   ```
+
+Health/verification:
+- `publish-mqtt` supports `--verify` to read back retained state and confirm the payload matches the just-published forecast (hash compare).
+- Use `--publish-retries N` to retry publish+verify if the broker is briefly unavailable; `--retry-delay` controls spacing.
+- Discovery publish can be disabled with `--no-discovery` or `mqtt.publish_discovery: false`.
 
 ---
 

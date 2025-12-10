@@ -217,6 +217,7 @@ def test_merge_config_prefers_nested_mqtt(tmp_path: Path):
         "verbose": None,
         "no_state": None,
         "publish_topics": None,
+        "publish_discovery": None,
     })()
 
     input_path, cfg = _merge_config(args)
@@ -260,6 +261,7 @@ publish_topics: true
         "verbose": None,
         "no_state": None,
         "publish_topics": None,
+        "publish_discovery": None,
     })()
 
     input_path, cfg = _merge_config(args)
@@ -268,3 +270,24 @@ publish_topics: true
     assert cfg.port == 11883
     assert cfg.base_topic == "legacy_sg"
     assert cfg.publish_topics is True
+
+
+def test_publish_verify_reads_back_and_matches(tmp_path: Path):
+    """When verify=True, we should read retained state and compare hashes."""
+    inp = tmp_path / "live.json"
+    inp.write_text(json.dumps(sample_payload()))
+
+    class VerifyingBridge(DummyBridge):
+        def __init__(self):
+            super().__init__()
+            self.verify_calls = 0
+
+        def get_retained_json(self, topic, timeout=1.0):
+            # After publish, retained will be set by DummyBridge.publish_json
+            self.verify_calls += 1
+            return self.retained
+
+    bridge = VerifyingBridge()
+    cfg = MqttConfig(base_topic="sg")
+    publish_forecast(inp, cfg, bridge=bridge, force=True, verify=True)
+    assert bridge.verify_calls >= 2  # once before, once after

@@ -23,6 +23,7 @@ from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
 from solarpredict.engine.simulate import simulate_day
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
+from solarpredict.integrations import ha_mqtt
 
 __version__ = "0.1.0"
 
@@ -312,6 +313,80 @@ def version_callback(
     if version:
         typer.echo(__version__)
         raise typer.Exit()
+
+
+@app.command("publish-mqtt")
+def publish_mqtt(
+    config: Path = typer.Option(Path("etc/config.yaml"), help="Combined scenario + mqtt config"),
+    input: Path = typer.Option(Path("live_results.json"), "--input", "-i", help="Forecast JSON produced by cron/run"),
+    mqtt_host: str = typer.Option(None, help="Override MQTT host"),
+    mqtt_port: int = typer.Option(None, help="Override MQTT port"),
+    mqtt_username: str = typer.Option(None, help="Override MQTT username"),
+    mqtt_password: str = typer.Option(None, help="Override MQTT password"),
+    base_topic: str = typer.Option(None, help="Override base topic"),
+    discovery_prefix: str = typer.Option(None, help="Override discovery prefix"),
+    connect_retries: int = typer.Option(None, help="MQTT connection retries"),
+    retry_delay: float = typer.Option(None, help="Delay between retries in seconds"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable chatty logging"),
+    force: bool = typer.Option(False, "--force", help="Publish even if unchanged or older"),
+    no_state: bool = typer.Option(False, "--no-state", help="Skip retained state blob"),
+    publish_topics: Optional[bool] = typer.Option(
+        None,
+        "--publish-topics/--no-publish-topics",
+        help="Also publish scalar topics (retained). Defaults to config.",
+        show_default=False,
+    ),
+    verify: bool = typer.Option(False, "--verify", help="Read back retained state and ensure it matches"),
+    publish_retries: int = typer.Option(1, "--publish-retries", help="Retry publish+verify N times on failure"),
+    no_discovery: bool = typer.Option(False, "--no-discovery", help="Skip HA discovery publish"),
+    skip_if_fresh: bool = typer.Option(False, "--skip-if-fresh", help="If broker already has same/newer generated_at, do nothing (state path only)"),
+):
+    """Publish forecast JSON to MQTT using the same config format as the simulator."""
+
+    # Reuse argparse-based merger by mimicking the Namespace shape.
+    args = type(
+        "Args",
+        (),
+        {
+            "config": config,
+            "input": input,
+            "mqtt_host": mqtt_host,
+            "mqtt_port": mqtt_port,
+            "mqtt_username": mqtt_username,
+            "mqtt_password": mqtt_password,
+            "base_topic": base_topic,
+            "discovery_prefix": discovery_prefix,
+            "connect_retries": connect_retries,
+            "retry_delay": retry_delay,
+            "verbose": verbose,
+            "force": force,
+            "no_state": no_state,
+            "publish_topics": publish_topics,
+            "verify": verify,
+            "publish_retries": publish_retries,
+            "publish_discovery": not no_discovery,
+            "skip_if_fresh": skip_if_fresh,
+        },
+    )()
+
+    input_path, cfg = ha_mqtt._merge_config(args)
+    debug_info = {}
+    published = ha_mqtt.publish_forecast(
+        input_path,
+        cfg,
+        force=force,
+        verify=verify,
+        publish_retries=publish_retries,
+        retry_delay_sec=args.retry_delay or cfg.retry_delay_sec,
+        skip_if_fresh=skip_if_fresh,
+        debug=debug_info,
+    )
+    if published:
+        typer.echo("Published new forecast to MQTT.")
+    else:
+        typer.echo("No publish needed (unchanged or not newer).")
+    if verbose and debug_info:
+        typer.echo(f"MQTT debug: {debug_info}")
 
 
 def main() -> None:  # pragma: no cover - thin wrapper for console_script

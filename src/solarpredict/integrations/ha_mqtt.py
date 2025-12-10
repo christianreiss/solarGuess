@@ -209,6 +209,7 @@ class MqttConfig:
     verbose: bool = False
     publish_state: bool = True
     publish_topics: bool = False
+    publish_discovery: bool = True
 
     @property
     def state_topic(self) -> str:
@@ -297,6 +298,25 @@ class PahoBridge:
             print(f"[ha_mqtt] retained {topic}: {'found' if payload is not None else 'missing'}")
         return payload
 
+    def get_retained_value(self, topic: str, timeout: float = 3.0) -> Optional[str]:
+        """Subscribe and return retained payload as text if present, else None."""
+        payload: str | None = None
+        event = threading.Event()
+
+        def on_message(client, userdata, msg):
+            nonlocal payload
+            payload = msg.payload.decode("utf-8") if msg.payload else ""
+            event.set()
+
+        self.client.on_message = on_message
+        self._ensure_connected()
+        self.client.subscribe(topic)
+        event.wait(timeout)
+        self._disconnect()
+        if self.cfg.verbose:
+            print(f"[ha_mqtt] retained text {topic}: {'found' if payload is not None else 'missing'}")
+        return payload
+
     def publish_json(self, topic: str, payload: Dict[str, Any], retain: bool = True, qos: int = 1):
         if self.cfg.verbose:
             size = len(json.dumps(payload).encode("utf-8"))
@@ -375,6 +395,24 @@ def _publish_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any]
         bridge.publish_value(topic, value, retain=True, qos=1)
 
 
+def _verify_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any]) -> list[str]:
+    """Lightweight verification: ensure a few retained scalar topics match."""
+    mismatches: list[str] = []
+    for topic, value in _iter_topics(cfg.base_topic, payload):
+        # Sample a small subset: all meta, plus first array metric per array.
+        if "/forecast/meta/" in topic or topic.count("/") <= 3:
+            retained = bridge.get_retained_value(topic)
+            if retained is None:
+                mismatches.append(f"missing:{topic}")
+                continue
+            if value is None and retained == "":
+                continue
+            # Compare as strings for simplicity.
+            if str(value) != retained:
+                mismatches.append(f"mismatch:{topic} expected={value} got={retained}")
+    return mismatches
+
+
 # ---------------------------------------------------------------------------
 # Main script
 # ---------------------------------------------------------------------------
@@ -385,61 +423,137 @@ def publish_forecast(
     cfg: MqttConfig,
     bridge: Optional[PahoBridge] = None,
     force: bool = False,
+    verify: bool = False,
+    publish_retries: int = 1,
+    retry_delay_sec: float = 1.0,
+    skip_if_fresh: bool = False,
+    debug: Optional[dict] = None,
 ) -> bool:
-    """Return True if a publish occurred."""
-    data = json.loads(input_path.read_text())
-    normalized = _normalize_payload(data)
-    if cfg.verbose:
-        print(f"[ha_mqtt] loaded input {input_path}")
-    bridge = bridge or PahoBridge(cfg)
+    """Return True if a publish occurred, with optional verification and retries.
 
-    with bridge.session():
-        remote = bridge.get_retained_json(cfg.state_topic) if cfg.publish_state else None
-        bridge.publish_availability(True)
-
-        def extract_ts(payload):
-            if not payload:
-                return None
-            if "meta" in payload:
-                return payload["meta"].get("generated_at")
-            return payload.get("generated_at")
-
-        # Decide whether to emit the retained forecast blob.
-        should_publish_state = False
-        if cfg.publish_state:
-            should_publish_state = force or _should_publish(normalized, remote)
-
-        # Scalar topics should flow any time publish_topics is enabled; we don't
-        # want them blocked by an unchanged state blob when publish_state=False.
-        should_publish_topics = cfg.publish_topics and (force or not cfg.publish_state or _should_publish(normalized, remote))
-
-        if cfg.verbose:
-            local_hash = _hash_payload(_canonical_payload(normalized))
-            remote_hash = _hash_payload(_canonical_payload(remote)) if remote is not None else None
-            print(
-                "[ha_mqtt] decision "
-                f"force={force} "
-                f"publish_state={cfg.publish_state} publish_topics={cfg.publish_topics} "
-                f"state_should={should_publish_state} topics_should={should_publish_topics} "
-                f"local_ts={extract_ts(normalized)} "
-                f"remote_ts={extract_ts(remote)} "
-                f"local_hash={local_hash} remote_hash={remote_hash}"
-            )
-
-        if not (should_publish_state or should_publish_topics):
+    When cfg.publish_state is False, only scalar topics are published/verified.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(1, max(1, publish_retries) + 1):
+        try:
+            data = json.loads(input_path.read_text())
+            if isinstance(data, list):
+                # Wrap legacy flat list into expected dict form.
+                data = {
+                    "results": data,
+                    "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                }
+            normalized = _normalize_payload(data)
             if cfg.verbose:
-                print("[ha_mqtt] skip publish (not newer or unchanged)")
-            return False
+                print(f"[ha_mqtt] loaded input {input_path}")
+            bridge = bridge or PahoBridge(cfg)
 
-        if should_publish_state:
-            disc = build_discovery_config(cfg)
-            bridge.publish_json(cfg.discovery_topics()["config"], disc, retain=True)
-            bridge.publish_json(cfg.state_topic, normalized, retain=True)
+            with bridge.session():
+                remote = bridge.get_retained_json(cfg.state_topic) if cfg.publish_state else None
 
-        if should_publish_topics:
-            _publish_topics(cfg, bridge, normalized)
+                if skip_if_fresh and remote is not None:
+                    local_ts = normalized.get("meta", {}).get("generated_at")
+                    remote_ts = remote.get("meta", {}).get("generated_at") if "meta" in remote else remote.get("generated_at")
+                    if local_ts and remote_ts and local_ts <= remote_ts and not force:
+                        if cfg.verbose:
+                            print(f"[ha_mqtt] skip_if_fresh: remote is newer or equal (remote={remote_ts}, local={local_ts})")
+                        return False
+                bridge.publish_availability(True)
 
-    return True
+                def extract_ts(payload):
+                    if not payload:
+                        return None
+                    if "meta" in payload:
+                        return payload["meta"].get("generated_at")
+                    return payload.get("generated_at")
+
+                # Decide whether to emit the retained forecast blob.
+                should_publish_state = False
+                if cfg.publish_state:
+                    should_publish_state = force or _should_publish(normalized, remote)
+
+                # Scalar topics flow when publish_topics enabled; unaffected by state gate.
+                should_publish_topics = cfg.publish_topics and (force or not cfg.publish_state or _should_publish(normalized, remote))
+
+                if cfg.verbose:
+                    local_hash = _hash_payload(_canonical_payload(normalized))
+                    remote_hash = _hash_payload(_canonical_payload(remote)) if remote is not None else None
+                    print(
+                        "[ha_mqtt] decision "
+                        f"force={force} "
+                        f"publish_state={cfg.publish_state} publish_topics={cfg.publish_topics} "
+                        f"state_should={should_publish_state} topics_should={should_publish_topics} "
+                        f"local_ts={extract_ts(normalized)} "
+                        f"remote_ts={extract_ts(remote)} "
+                        f"local_hash={local_hash} remote_hash={remote_hash}"
+                    )
+
+                if not (should_publish_state or should_publish_topics):
+                    if cfg.verbose:
+                        print("[ha_mqtt] skip publish (not newer or unchanged)")
+                    return False
+
+                if should_publish_state:
+                    if cfg.publish_discovery:
+                        disc = build_discovery_config(cfg)
+                        bridge.publish_json(cfg.discovery_topics()["config"], disc, retain=True)
+                    bridge.publish_json(cfg.state_topic, normalized, retain=True)
+
+                if should_publish_topics:
+                    _publish_topics(cfg, bridge, normalized)
+
+                if verify:
+                    checks = []
+                    if cfg.publish_state:
+                        remote_after = bridge.get_retained_json(cfg.state_topic)
+                        if remote_after is None:
+                            raise RuntimeError("MQTT verify failed: no retained state after publish")
+                        local_hash = _hash_payload(_canonical_payload(normalized))
+                        remote_hash = _hash_payload(_canonical_payload(remote_after))
+                        if local_hash != remote_hash:
+                            raise RuntimeError("MQTT verify failed: retained payload mismatch")
+                        checks.append("state")
+                    if cfg.publish_topics:
+                        # spot-check one meta field and one array field to ensure scalar topics landed
+                        topics = list(_iter_topics(cfg.base_topic, normalized))
+                        sample_meta = next((t for t, _ in topics if "/forecast/meta/total_energy_kwh" in t), None)
+                        sample_arr = next((t for t, _ in topics if t.count("/") >= 3), None)
+                        if sample_meta:
+                            val = bridge.get_retained_value(sample_meta)
+                            if val is None:
+                                raise RuntimeError(f"MQTT verify failed: missing retained {sample_meta}")
+                        if sample_arr:
+                            val = bridge.get_retained_value(sample_arr)
+                            if val is None:
+                                raise RuntimeError(f"MQTT verify failed: missing retained {sample_arr}")
+                        checks.append("topics")
+                        # Broader verification for meta + one metric per array.
+                        mismatches = _verify_topics(cfg, bridge, normalized)
+                        if mismatches:
+                            raise RuntimeError(f"MQTT verify failed: {'; '.join(mismatches)}")
+                    if cfg.verbose and checks:
+                        print(f"[ha_mqtt] verify success ({', '.join(checks)})")
+                if debug is not None:
+                    debug.update(
+                        {
+                            "mqtt_published": True,
+                            "mqtt_force": force,
+                            "mqtt_verify": bool(verify),
+                            "mqtt_publish_state": cfg.publish_state,
+                            "mqtt_publish_topics": cfg.publish_topics,
+                            "mqtt_publish_discovery": cfg.publish_discovery,
+                        }
+                    )
+
+            return True
+        except Exception as exc:  # pragma: no cover - exercised via retry tests
+            last_exc = exc
+            if attempt >= max(1, publish_retries):
+                raise
+            time.sleep(retry_delay_sec)
+    if last_exc:
+        raise last_exc
+    return False
 
 
 def _parse_args() -> argparse.Namespace:
@@ -516,6 +630,7 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
         verbose=bool(choose("verbose", mqtt_cfg.get("verbose", False))),
         publish_state=publish_state,
         publish_topics=bool(choose("publish_topics", mqtt_cfg.get("publish_topics", False))),
+        publish_discovery=bool(choose("publish_discovery", mqtt_cfg.get("publish_discovery", True))),
     )
     return input_path, cfg
 

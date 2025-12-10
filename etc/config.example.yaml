@@ -28,7 +28,9 @@ mqtt:
   discovery_prefix: homeassistant
   connect_retries: 3
   retry_delay: 1.0
+  enable: true
   publish_topics: false
+  publish_discovery: true
   verbose: false
 
 run:
