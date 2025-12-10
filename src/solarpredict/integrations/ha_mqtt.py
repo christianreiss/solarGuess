@@ -426,20 +426,47 @@ def _publish_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any]
 
 
 def _verify_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any]) -> list[str]:
-    """Lightweight verification: ensure a few retained scalar topics match."""
-    mismatches: list[str] = []
+    """Lightweight verification: ensure a few retained scalar topics match.
+
+    Uses a single session/subscription burst to reduce broker load and avoid races.
+    """
+    topics_to_check = []
     for topic, value in _iter_topics(cfg.base_topic, payload):
         # Sample a small subset: all meta, plus first array metric per array.
         if "/forecast/meta/" in topic or topic.count("/") <= 3:
-            retained = bridge.get_retained_value(topic)
-            if retained is None:
-                mismatches.append(f"missing:{topic}")
-                continue
-            if value is None and retained == "":
-                continue
-            # Compare as strings for simplicity.
-            if str(value) != retained:
-                mismatches.append(f"mismatch:{topic} expected={value} got={retained}")
+            topics_to_check.append((topic, value))
+
+    mismatches: list[str] = []
+    if not topics_to_check:
+        return mismatches
+
+    expected = {t: str(v) if v is not None else "" for t, v in topics_to_check}
+    received: dict[str, str | None] = {t: None for t, _ in topics_to_check}
+    event = threading.Event()
+
+    def on_message(client, userdata, msg):
+        if msg.topic in received:
+            received[msg.topic] = msg.payload.decode("utf-8") if msg.payload is not None else ""
+            if all(v is not None for v in received.values()):
+                event.set()
+
+    bridge.client.on_message = on_message
+    bridge._ensure_connected()
+    for topic in expected.keys():
+        bridge.client.subscribe(topic, qos=1)
+
+    # Wait bounded for all expected retained messages.
+    event.wait(timeout=3.0)
+    bridge._disconnect()
+
+    for topic, exp in expected.items():
+        got = received.get(topic)
+        if got is None:
+            mismatches.append(f"missing:{topic}")
+            continue
+        if got != exp:
+            mismatches.append(f"mismatch:{topic} expected={exp} got={got}")
+
     return mismatches
 
 
