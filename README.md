@@ -103,6 +103,8 @@ pip install -e .
 
     - `--weather-label end` matches Open-Meteo's backward-averaged timestamps. Switch to `start` if your provider reports forward averages.
     - Add `--format csv --output results.csv` if you need a spreadsheet-friendly dump.
+    - Want climatology instead of a live forecast? Pass `--weather-source pvgis-tmy` (optionally with `--pvgis-cache-dir .cache/pvgis`) to fetch PVGIS typical-year irradiance for your coordinates.
+    - To sanity-check live forecasts against PVGIS, add `--qc-pvgis` or set `run.qc_pvgis: true` in the config; the CLI will emit `qc.pvgis_compare` debug events so you can diff live vs. typical energy/POA.
 
 3. **Inspect results.** The command prints JSON summary (sites/arrays with `energy_kwh`, `peak_kw`, etc.) and the optional `debug.jsonl` captures every stage for audits.
 
@@ -150,11 +152,12 @@ Rules of thumb:
 
 > Everything below lives in `src/solarpredict/**`. Matching function names are referenced so you can trace execution quickly.
 
-### 1. Weather ingest (`weather.open_meteo.OpenMeteoWeatherProvider`)
+### 1. Weather ingest (`weather.open_meteo.OpenMeteoWeatherProvider`, `weather.pvgis.PVGISWeatherProvider`, `weather.composite.CompositeWeatherProvider`)
 
-- Calls Open-Meteo with `timestep ∈ {1h, 15m}` and auto timezones per site.
-- Normalizes hourly/minutely blocks into a tz-aware `DataFrame` with `ghi_wm2`, `dni_wm2`, `dhi_wm2`, `temp_air_c`, `wind_ms`.
-- Emits `weather.request`, `weather.response_meta`, and `weather.summary` debug events so you can replay API parameters and min/max irradiance.
+- Open-Meteo: live forecast (1h or 15m) with tz autodetect per site.
+- PVGIS TMY: fetches the EU JRC PVGIS typical meteorological year JSON, re-stamps timestamps to the requested year, and optionally caches responses per lat/lon on disk. Perfect for baseline sanity checks or offline runs.
+- Composite: always runs the primary provider (default Open-Meteo) and fills NaNs or negative irradiance values from PVGIS before handing data to the rest of the pipeline.
+- All providers emit `weather.request`, `weather.response_meta`, `weather.summary`, plus `weather.merge` for composite stats.
 
 ### 2. Step detection (`engine.simulate._infer_step_seconds`)
 
@@ -221,7 +224,7 @@ Rules of thumb:
 
 | Command | Description |
 | --- | --- |
-| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--debug`, `--format {json,csv}`, `--output`. |
+| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
 | `config` | Interactive YAML/JSON scenario builder/editor. Guides you through locations and arrays with validation using the same models as the engine. |
 
 All CLI code lives in `src/solarpredict/cli.py` (Typer-based). Weather provider defaults to Open-Meteo but the CLI factory (`default_weather_provider`) makes dependency injection easy for tests.
@@ -242,6 +245,8 @@ src/solarpredict/
   weather/
     base.py              # WeatherProvider protocol
     open_meteo.py        # Open-Meteo implementation (default)
+    pvgis.py             # PVGIS TMY climatology provider (cacheable)
+    composite.py         # Merge live+climatology with deterministic backfill
   solar/
     position.py          # pvlib solar geometry wrappers
     irradiance.py        # Perez POA helpers
