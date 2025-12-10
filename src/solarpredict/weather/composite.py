@@ -25,10 +25,26 @@ class CompositeWeatherProvider(WeatherProvider):
         self.debug = debug or NullDebugCollector()
 
     def _align_secondary(self, sec: pd.DataFrame, target_index: pd.DatetimeIndex) -> pd.DataFrame:
-        """Reindex secondary data to primary timestamps; forward-fill then back-fill."""
-        sec_aligned = sec.reindex(target_index, method="pad")
-        sec_aligned = sec_aligned.fillna(method="bfill")
-        return sec_aligned
+        """Reindex secondary data to primary timestamps with bounds awareness.
+
+        Only fill within the temporal overlap of the secondary series to avoid
+        bleeding climatology across days. Outside the overlap, values remain NaN.
+        """
+        if sec.empty:
+            return pd.DataFrame(index=target_index)
+
+        # Determine overlap window
+        sec_start, sec_end = sec.index.min(), sec.index.max()
+        in_overlap = (target_index >= sec_start) & (target_index <= sec_end)
+
+        # Align without implicit fill, then fill *only* inside the overlap window.
+        aligned = sec.reindex(target_index)
+        if in_overlap.any():
+            aligned.loc[in_overlap] = aligned.loc[in_overlap].ffill().bfill()
+
+        # Outside overlap remains NaN to force callers to notice missing coverage.
+        aligned.loc[~in_overlap] = pd.NA
+        return aligned
 
     def get_forecast(
         self,
@@ -52,8 +68,15 @@ class CompositeWeatherProvider(WeatherProvider):
                 if col not in filled.columns or col not in sec_df.columns:
                     continue
                 before_na = filled[col].isna() | (filled[col] < 0)
-                filled.loc[before_na, col] = sec_df.loc[before_na, col]
+                candidates = sec_df.loc[before_na, col]
+                filled.loc[before_na, col] = candidates
                 after_na = filled[col].isna()
+                if after_na.any():
+                    missing_ts = filled.index[after_na].tolist()
+                    raise ValueError(
+                        f"CompositeWeatherProvider: secondary data missing for {col} at {len(missing_ts)} timestamps "
+                        f"for site {loc_id}; examples: {missing_ts[:3]}"
+                    )
                 fill_counts[col] = int(before_na.sum())
                 # Clip negative irradiance just in case
                 if "wm2" in col:
