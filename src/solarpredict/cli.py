@@ -23,6 +23,7 @@ from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
 from solarpredict.engine.simulate import simulate_day
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
+from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.integrations import ha_mqtt
 
 __version__ = "0.1.0"
@@ -193,6 +194,10 @@ def run(
         "end",
         help="Meaning of weather timestamps: 'end' (backward-averaged, default), 'start' (forward-averaged), or 'center'.",
     ),
+    weather_source: str = typer.Option(
+        "open-meteo",
+        help="Weather provider: 'open-meteo' (default) or 'pvgis-tmy' (typical meteorological year).",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -210,7 +215,13 @@ def run(
         _exit_with_error("date must be YYYY-MM-DD")
 
     debug_collector = JsonlDebugWriter(debug) if debug else NullDebugCollector()
-    provider = default_weather_provider(debug=debug_collector)
+    weather_source = weather_source.lower()
+    if weather_source == "open-meteo":
+        provider = default_weather_provider(debug=debug_collector)
+    elif weather_source == "pvgis-tmy":
+        provider = PVGISWeatherProvider(debug=debug_collector)
+    else:
+        _exit_with_error(f"Unsupported weather_source '{weather_source}'")
 
     result = simulate_day(
         scenario,
