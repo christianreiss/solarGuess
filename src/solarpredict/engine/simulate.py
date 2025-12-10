@@ -182,6 +182,16 @@ def simulate_day(
             ts=times[0] if len(times) else None,
         )
 
+        # Validate weather_label vs provider defaults when possible.
+        if hasattr(weather_provider, "__class__"):
+            provider_name = weather_provider.__class__.__name__.lower()
+            if provider_name == "openmeteoweatherprovider" and weather_label.lower() == "start":
+                site_debug.emit(
+                    "weather.label_warning",
+                    {"expected": "end", "received": weather_label},
+                    ts=times[0] if len(times) else None,
+                )
+
         # Use interval midpoints when we have a valid step to reduce bias from averaged irradiance.
         solar_times = _apply_time_label(times, step_seconds, weather_label)
 
@@ -263,7 +273,11 @@ def simulate_day(
             pac_group = pvwatts_ac(pdc_sum, pdc0_inv_w=pdc0_inv, eta_inv_nom=eta_inv_nom, debug=site_debug)
 
             # allocate by DC share per timestep; handle zeros
-            share = {a: array_data[a]["pdc"] / pdc_sum.replace(0, pd.NA) for a in arr_ids}
+            pdc_sum_safe = pdc_sum.replace(0, pd.NA).infer_objects(copy=False)
+            share = {
+                a: (array_data[a]["pdc"].infer_objects(copy=False) / pdc_sum_safe).infer_objects(copy=False)
+                for a in arr_ids
+            }
             for a in arr_ids:
                 pac_arr = pac_group * share[a].fillna(0)
                 array_data[a]["pac"] = pac_arr

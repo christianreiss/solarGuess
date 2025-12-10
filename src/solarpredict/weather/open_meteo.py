@@ -117,9 +117,20 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         params = self._build_params(locations, start, end, timestep)
         params["wind_speed_unit"] = "ms"
         self.debug.emit("weather.request", {"url": self.base_url, "params": params}, ts=start)
-        resp = self.session.get(self.base_url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        for attempt in range(1, 4):
+            try:
+                resp = self.session.get(self.base_url, params=params, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except Exception as exc:
+                if attempt == 3:
+                    raise
+                backoff = 0.5 * attempt
+                self.debug.emit("weather.retry", {"attempt": attempt, "error": str(exc)}, ts=start)
+                import time as _time
+
+                _time.sleep(backoff)
         if not isinstance(data, list):  # Open-Meteo returns list for multiple coordinates
             data = [data]
 

@@ -68,6 +68,7 @@ class CompositeWeatherProvider(WeatherProvider):
                 if col not in filled.columns or col not in sec_df.columns:
                     continue
                 before_na = filled[col].isna() | (filled[col] < 0)
+                neg_mask = filled[col] < 0
                 candidates = sec_df.loc[before_na, col]
                 filled.loc[before_na, col] = candidates
                 after_na = filled[col].isna()
@@ -81,6 +82,14 @@ class CompositeWeatherProvider(WeatherProvider):
                 # Clip negative irradiance just in case
                 if "wm2" in col:
                     filled[col] = filled[col].clip(lower=0)
+            ScopedDebugCollector(self.debug, site=loc_id).emit(
+                "weather.merge_detail",
+                {
+                    "filled_negative": {k: int((filled[k] < 0).sum()) for k in _REQ_COLS if k in filled},
+                    "filled_missing": fill_counts,
+                },
+                ts=filled.index[0] if len(filled.index) else None,
+            )
             # emit merge stats
             ScopedDebugCollector(self.debug, site=loc_id).emit(
                 "weather.merge",

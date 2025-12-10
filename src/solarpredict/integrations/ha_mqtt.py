@@ -491,6 +491,8 @@ def publish_forecast(
     When cfg.publish_state is False, only scalar topics are published/verified.
     """
     last_exc: Exception | None = None
+    start_time = time.time()
+    max_retry_budget = max(1, publish_retries) * retry_delay_sec + 5
     for attempt in range(1, max(1, publish_retries) + 1):
         try:
             data = json.loads(input_path.read_text())
@@ -615,6 +617,8 @@ def publish_forecast(
             last_exc = exc
             if attempt >= max(1, publish_retries):
                 raise
+            if time.time() - start_time > max_retry_budget:
+                raise RuntimeError("MQTT publish retries exceeded time budget") from exc
             time.sleep(retry_delay_sec)
     if last_exc:
         raise last_exc

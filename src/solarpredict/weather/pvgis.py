@@ -111,9 +111,20 @@ class PVGISWeatherProvider(WeatherProvider):
                     cache_hit = True
             if not cache_hit:
                 self.debug.emit("weather.request", {"url": self.base_url, "params": params}, ts=start, site=loc["id"])
-                resp = self.session.get(self.base_url, params=params, timeout=30)
-                resp.raise_for_status()
-                data = resp.json()
+                for attempt in range(1, 4):
+                    try:
+                        resp = self.session.get(self.base_url, params=params, timeout=30)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        break
+                    except Exception as exc:
+                        if attempt == 3:
+                            raise
+                        backoff = 0.5 * attempt
+                        self.debug.emit("weather.retry", {"attempt": attempt, "error": str(exc)}, ts=start, site=loc["id"])
+                        import time as _time
+
+                        _time.sleep(backoff)
                 if self.cache_dir:
                     cache_path.write_text(json.dumps(data))
             df = self._parse_single(data, target_year=target_year)
