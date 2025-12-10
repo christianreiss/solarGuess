@@ -13,6 +13,7 @@ dependencies = [
     "typer>=0.9",
     "PyYAML>=6.0",
     "requests>=2.31",
+    "prompt_toolkit>=3.0",
 ]
 
 [project.scripts]

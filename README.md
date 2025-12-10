@@ -108,6 +108,16 @@ pip install -e .
 
 3. **Inspect results.** The command prints JSON summary (sites/arrays with `energy_kwh`, `peak_kw`, etc.) and the optional `debug.jsonl` captures every stage for audits.
 
+### Interactive config editor (TUI)
+
+Build or edit scenario files with a keyboard-driven TUI:
+
+```bash
+solarpredict config etc/config.yaml
+```
+
+Keys: `↑/↓` move selection, `e` edit, `a` add site, `d` delete, `Ctrl+S` save, `Ctrl+C` quit. Pass `--no-tui` to fall back to the legacy prompt flow (handy for scripting/tests). Debug JSONL for TUI actions can be written with `--debug path/to/debug.jsonl`.
+
 ---
 
 ## Configuration guide

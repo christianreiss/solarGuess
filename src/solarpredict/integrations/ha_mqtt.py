@@ -172,7 +172,7 @@ def _hash_payload(data: Dict[str, Any]) -> str:
 
 
 def _should_publish(local: Dict[str, Any], remote: Optional[Dict[str, Any]]) -> bool:
-    """Return True only when data is newer AND content changed."""
+    """Return True only when data is newer (based on generated_at)."""
 
     def _extract_ts(payload: Optional[Dict[str, Any]]) -> Optional[dt.datetime]:
         if not payload:
@@ -183,12 +183,13 @@ def _should_publish(local: Dict[str, Any], remote: Optional[Dict[str, Any]]) -> 
 
     local_ts = _extract_ts(local)
     remote_ts = _extract_ts(remote)
-    newer = remote_ts is None or (local_ts and remote_ts and local_ts > remote_ts)
 
-    local_hash = _hash_payload(_canonical_payload(local))
-    remote_hash = _hash_payload(_canonical_payload(remote)) if remote is not None else None
-    changed = remote_hash is None or local_hash != remote_hash
-    return bool(newer and changed)
+    # If we cannot determine timestamps, err on publishing to avoid missing updates.
+    if local_ts is None:
+        return True
+    if remote_ts is None:
+        return True
+    return local_ts > remote_ts
 
 
 # ---------------------------------------------------------------------------
@@ -472,10 +473,8 @@ def publish_forecast(
                 should_publish_state = False
                 if cfg.publish_state:
                     should_publish_state = force or _should_publish(normalized, remote)
-
-                # Scalar topics flow when publish_topics enabled; unaffected by state gate.
-                should_publish_topics = cfg.publish_topics and (force or not cfg.publish_state or _should_publish(normalized, remote))
-
+                # Scalar topics flow when publish_topics enabled; same freshness gate (force bypasses).
+                should_publish_topics = cfg.publish_topics and (force or _should_publish(normalized, remote))
                 if cfg.verbose:
                     local_hash = _hash_payload(_canonical_payload(normalized))
                     remote_hash = _hash_payload(_canonical_payload(remote)) if remote is not None else None

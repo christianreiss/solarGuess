@@ -1,10 +1,13 @@
 from pathlib import Path
 import json
+import datetime as dt
 
 import pandas as pd
 from typer.testing import CliRunner
 
 from solarpredict import cli
+from solarpredict import cli_utils
+from solarpredict import cli_utils
 from solarpredict.core.models import Location, PVArray, Scenario, Site
 from solarpredict.core.config import load_scenario
 
@@ -101,6 +104,85 @@ def test_run_command_smoke(monkeypatch, tmp_path):
     assert debug_path.read_text().strip() != ""
 
 
+def test_run_skips_when_existing_generated_today(monkeypatch, tmp_path):
+    cfg = _write_fixture(tmp_path)
+    out_json = tmp_path / "out.json"
+
+    # existing output with today's generated_at
+    # use local date to match guard logic that compares to dt.date.today()
+    today_iso = dt.datetime.combine(dt.date.today(), dt.datetime.now().time(), dt.timezone.utc).isoformat()
+    out_json.write_text(json.dumps({"meta": {"generated_at": today_iso, "date": "2025-06-01"}, "sites": []}))
+
+    called = {"simulate": False}
+
+    def fake_provider(debug):
+        return DummyWeatherProvider()
+
+    def fake_simulate_day(*args, **kwargs):
+        called["simulate"] = True
+        return type("Result", (), {"daily": pd.DataFrame(), "timeseries": {}})()
+
+    monkeypatch.setattr(cli, "default_weather_provider", fake_provider)
+    monkeypatch.setattr(cli, "simulate_day", fake_simulate_day)
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "run",
+            "--config",
+            str(cfg),
+            "--date",
+            "2025-06-01",
+            "--format",
+            "json",
+            "--output",
+            str(out_json),
+        ],
+    )
+    assert res.exit_code == 0
+    assert "already generated today" in res.stdout
+    assert called["simulate"] is False
+
+
+def test_run_force_bypasses_skip(monkeypatch, tmp_path):
+    cfg = _write_fixture(tmp_path)
+    out_json = tmp_path / "out.json"
+
+    today_iso = dt.datetime.now(dt.timezone.utc).isoformat()
+    out_json.write_text(json.dumps({"meta": {"generated_at": today_iso}, "sites": []}))
+
+    called = {"simulate": False}
+
+    def fake_provider(debug):
+        return DummyWeatherProvider()
+
+    def fake_simulate_day(*args, **kwargs):
+        called["simulate"] = True
+        df = pd.DataFrame([{"site": "site1", "array": "arr1", "energy_kwh": 1.0}])
+        return type("Result", (), {"daily": df, "timeseries": {}})()
+
+    monkeypatch.setattr(cli, "default_weather_provider", fake_provider)
+    monkeypatch.setattr(cli, "simulate_day", fake_simulate_day)
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "run",
+            "--config",
+            str(cfg),
+            "--date",
+            "2025-06-01",
+            "--format",
+            "json",
+            "--output",
+            str(out_json),
+            "--force",
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert called["simulate"] is True
+
+
 def test_config_command_add_edit_delete(monkeypatch, tmp_path):
     path = tmp_path / "config.yaml"
 
@@ -129,7 +211,7 @@ def test_config_command_add_edit_delete(monkeypatch, tmp_path):
 
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: next(inputs))
 
-    res = runner.invoke(cli.app, ["config", str(path)])
+    res = runner.invoke(cli.app, ["config", "--no-tui", str(path)])
     assert res.exit_code == 0, res.stdout
 
     scenario = load_scenario(path)
@@ -152,7 +234,7 @@ def test_scenario_to_dict_preserves_inverter_fields():
         inverter_pdc0_w=6500,
     )
     site = Site(id="s", location=Location(id="loc", lat=0, lon=0, tz="UTC"), arrays=[arr])
-    data = cli._scenario_to_dict(Scenario(sites=[site]))
+    data = cli_utils.scenario_to_dict(Scenario(sites=[site]))
     arr_out = data["sites"][0]["arrays"][0]
     assert arr_out["inverter_group_id"] == "g1"
     assert arr_out["inverter_pdc0_w"] == 6500

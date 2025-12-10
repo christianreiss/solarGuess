@@ -76,11 +76,8 @@ def test_should_publish_requires_newer_and_changed():
     older_remote = sample_payload(generated_at="2025-12-09T11:00:00+00:00")
     newer_remote = sample_payload(generated_at="2025-12-09T13:00:00+00:00")
 
-    assert _should_publish(local, older_remote) is False  # content same, not changed
-
-    changed = sample_payload(results=[{"energy_kwh": 9.0}])
-    assert _should_publish(changed, older_remote) is True
-    assert _should_publish(changed, newer_remote) is False  # not newer
+    assert _should_publish(local, older_remote) is True  # newer wins
+    assert _should_publish(local, newer_remote) is False  # not newer
 
 
 class DummyBridge:
@@ -120,7 +117,7 @@ def test_publish_forecast_skips_when_unchanged(tmp_path: Path):
     inp.write_text(json.dumps(sample_payload()))
     bridge = DummyBridge()
     cfg = MqttConfig(base_topic="sg")
-    bridge.retained = sample_payload()  # same
+    bridge.retained = sample_payload()  # same generated_at -> not newer
     published = publish_forecast(inp, cfg, bridge=bridge)
     assert published is False
     # Availability still published to keep sensor marked online.

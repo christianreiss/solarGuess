@@ -27,6 +27,9 @@ from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
 from solarpredict.integrations import ha_mqtt
+from solarpredict.cli_config_tui import launch_config_tui
+from solarpredict.cli_utils import write_scenario, load_existing
+from solarpredict.cli_config_tui import launch_config_tui
 
 __version__ = "0.1.0"
 
@@ -44,56 +47,11 @@ def _exit_with_error(msg: str) -> None:
     raise typer.Exit(code=1)
 
 
-def _scenario_to_dict(scenario: Scenario) -> dict:
-    def loc_dict(loc: Location) -> dict:
-        return {
-            "id": loc.id,
-            "lat": loc.lat,
-            "lon": loc.lon,
-            "tz": loc.tz,
-            "elevation_m": loc.elevation_m,
-        }
-
-    def arr_dict(arr: PVArray) -> dict:
-        data = {
-            "id": arr.id,
-            "tilt_deg": arr.tilt_deg,
-            "azimuth_deg": arr.azimuth_deg,
-            "pdc0_w": arr.pdc0_w,
-            "gamma_pdc": arr.gamma_pdc,
-            "dc_ac_ratio": arr.dc_ac_ratio,
-            "eta_inv_nom": arr.eta_inv_nom,
-            "losses_percent": arr.losses_percent,
-            "temp_model": arr.temp_model,
-        }
-        if arr.inverter_group_id is not None:
-            data["inverter_group_id"] = arr.inverter_group_id
-        if arr.inverter_pdc0_w is not None:
-            data["inverter_pdc0_w"] = arr.inverter_pdc0_w
-        return data
-
-    return {
-        "sites": [
-            {
-                "id": site.id,
-                "location": loc_dict(site.location),
-                "arrays": [arr_dict(arr) for arr in site.arrays],
-            }
-            for site in scenario.sites
-        ]
-    }
-
-
 def _write_scenario(path: Path, scenario: Scenario) -> None:
-    data = _scenario_to_dict(scenario)
-    if path.suffix.lower() in {".yaml", ".yml", ""}:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(data, sort_keys=False))
-    elif path.suffix.lower() == ".json":
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, sort_keys=False))
-    else:
-        _exit_with_error(f"Unsupported config extension: {path.suffix}")
+    try:
+        write_scenario(path, scenario)
+    except ConfigError as exc:
+        _exit_with_error(str(exc))
 
 
 def _prompt_location(existing: Location | None = None) -> Location:
@@ -190,12 +148,11 @@ def _prompt_site(existing: Site | None = None) -> Site:
 
 
 def _load_existing(path: Path) -> List[Site]:
-    if not path.exists():
-        return []
     try:
-        scenario = load_scenario(path)
-        typer.echo(f"Loaded existing scenario with {len(scenario.sites)} site(s)")
-        return list(scenario.sites)
+        sites = load_existing(path)
+        if sites:
+            typer.echo(f"Loaded existing scenario with {len(sites)} site(s)")
+        return sites
     except ConfigError as exc:
         typer.echo(f"Could not load existing config: {exc}", err=True)
         return []
@@ -228,6 +185,7 @@ def run(
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
+    force: bool = typer.Option(False, "--force", help="Run even if output already generated today"),
 ):
     """Run a daily simulation for the provided scenario."""
 
@@ -244,6 +202,35 @@ def run(
         _exit_with_error("date must be YYYY-MM-DD")
 
     debug_collector = JsonlDebugWriter(debug) if debug else NullDebugCollector()
+    output_path = output or Path(f"results.{format}")
+
+    if not force and output_path.exists():
+        existing = None
+        try:
+            existing = json.loads(output_path.read_text())
+        except json.JSONDecodeError:
+            existing = None  # unreadable; ignore guard
+
+        generated_at = None
+        payload_date = None
+        if isinstance(existing, dict):
+            if "meta" in existing:
+                meta = existing.get("meta", {}) or {}
+                generated_at = meta.get("generated_at")
+                payload_date = meta.get("date") or existing.get("date")
+            else:
+                generated_at = existing.get("generated_at")
+                payload_date = existing.get("date")
+        # Flat list has no generated_at; skip guard.
+
+        if generated_at and payload_date == date:
+            gen_dt = dt.datetime.fromisoformat(generated_at)
+            if gen_dt.date() == dt.date.today():
+                typer.echo(
+                    f"Output {output_path} for {payload_date} already generated today ({generated_at}); use --force to rerun."
+                )
+                raise typer.Exit(code=0)
+
     weather_source = weather_source.lower()
     if weather_source == "open-meteo":
         provider = default_weather_provider(debug=debug_collector)
@@ -310,7 +297,6 @@ def run(
             typer.echo(f"QC warning: {w}", err=True)
 
     daily = result.daily
-    output_path = output or Path(f"results.{format}")
 
     fmt = format.lower()
     if fmt == "json":
@@ -339,8 +325,20 @@ def _list_sites(sites: List[Site]) -> None:
 
 
 @app.command()
-def config(path: Path = typer.Argument(..., help="Path to save scenario YAML/JSON")) -> None:
-    """Interactive scenario builder/editor."""
+def config(
+    path: Path = typer.Argument(..., help="Path to save scenario YAML/JSON"),
+    no_tui: bool = typer.Option(False, help="Use legacy prompt mode instead of TUI"),
+    debug: Optional[Path] = typer.Option(None, help="Write TUI debug JSONL"),
+):
+    """Interactive scenario builder/editor.
+
+    Default mode launches a prompt_toolkit TUI. Pass --no-tui to use the legacy
+    prompt-driven flow (useful for non-interactive scripts/tests).
+    """
+
+    if not no_tui:
+        launch_config_tui(path, debug_path=debug)
+        return
 
     sites = _load_existing(path)
 
