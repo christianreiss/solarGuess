@@ -169,6 +169,9 @@ def _iter_topics(base: str, payload: Dict[str, Any]):
                     continue
                 # Preserve solarGuess naming; callers can alias downstream in HA.
                 yield f"{base}/{site_id}/{arr_id}/{key}", val
+                if key == "energy_kwh":
+                    # convenience alias: align array totals with site naming
+                    yield f"{base}/{site_id}/{arr_id}/total_energy_kwh", val
                 # If array has pv area metadata, publish energy-per-m2 for convenience.
                 if key == "energy_kwh" and arr.get("area_m2"):
                     area = arr.get("area_m2")
