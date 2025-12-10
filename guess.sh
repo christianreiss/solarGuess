@@ -7,13 +7,29 @@ cd "$(dirname "$0")"
 
 DATE=${1:-$(date +%F)}
 
+# pick interpreter: prefer venv python, else system python3, else python
 if [ -d .venv ]; then
   # shellcheck disable=SC1091
   source .venv/bin/activate
 fi
 
+PY_BIN=${PY_BIN:-}
+if [ -z "$PY_BIN" ]; then
+  for cand in python3 python; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      PY_BIN="$cand"
+      break
+    fi
+  done
+fi
+
+if [ -z "$PY_BIN" ]; then
+  echo "ERROR: no python interpreter found (looked for python3/python)." >&2
+  exit 127
+fi
+
 # derive output path: prefer run.output; else derive from first site id; else fallback
-OUT=$(python - <<'PY'
+OUT=$($PY_BIN - <<'PY'
 import yaml, pathlib
 cfg = pathlib.Path("etc/config.yaml")
 if cfg.exists():
@@ -30,13 +46,13 @@ print("live_results.json")
 PY
 )
 
-PYTHONPATH=src python -m solarpredict.cli run \
+PYTHONPATH=src $PY_BIN -m solarpredict.cli run \
   --config etc/config.yaml \
   --date "$DATE" \
   --output "$OUT"
 
 # Wrap flat records into hierarchical payload with meta (matches MQTT expectations)
-python - <<'PY' "$DATE" "$OUT"
+"$PY_BIN" - <<'PY' "$DATE" "$OUT"
 import json, sys, datetime as dt, pathlib
 from collections import defaultdict
 date = sys.argv[1]
@@ -103,6 +119,6 @@ payload = {"meta": meta, "sites": sites}
 out_path.write_text(json.dumps(payload, indent=2))
 PY
 
-PYTHONPATH=src python -m solarpredict.cli publish-mqtt \
+PYTHONPATH=src $PY_BIN -m solarpredict.cli publish-mqtt \
   --config etc/config.yaml \
   --input "$OUT"
