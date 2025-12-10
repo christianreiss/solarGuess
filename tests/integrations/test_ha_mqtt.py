@@ -175,6 +175,25 @@ def test_iter_topics_formats_meta_and_arrays():
     assert "sg/s/a1/id" not in topics  # identifiers skipped
 
 
+def test_iter_topics_includes_pvgis_and_poa_energy_per_m2():
+    payload = _normalize_payload(
+        sample_payload(
+            results=[
+                {
+                    "site": "s",
+                    "array": "a1",
+                    "energy_kwh": 1.0,
+                    "poa_kwh_m2": 0.8,
+                    "pvgis_poa_kwh_m2": 0.6,
+                }
+            ]
+        )
+    )
+    topics = dict(_iter_topics("sg", payload))
+    assert topics["sg/s/a1/poa_kwh_m2"] == 0.8
+    assert topics["sg/s/a1/pvgis_poa_kwh_m2"] == 0.6
+
+
 def test_publish_topics_flag_pushes_scalar_topics(tmp_path: Path):
     inp = tmp_path / "live.json"
     inp.write_text(json.dumps(sample_payload()))

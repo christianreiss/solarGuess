@@ -153,6 +153,8 @@ def _iter_topics(base: str, payload: Dict[str, Any]):
 
     meta = payload.get("meta", {})
     for key, val in meta.items():
+        if val is None:
+            continue
         yield f"{base}/forecast/meta/{key}", val
 
     for site in payload.get("sites", []):
@@ -163,7 +165,19 @@ def _iter_topics(base: str, payload: Dict[str, Any]):
             for key, val in arr.items():
                 if key in {"id", "array"}:  # skip identifiers
                     continue
+                if val is None:
+                    continue
+                # Preserve solarGuess naming; callers can alias downstream in HA.
                 yield f"{base}/{site_id}/{arr_id}/{key}", val
+                # If array has pv area metadata, publish energy-per-m2 for convenience.
+                if key == "energy_kwh" and arr.get("area_m2"):
+                    area = arr.get("area_m2")
+                    try:
+                        per_m2 = float(val) / float(area) if area else None
+                    except Exception:
+                        per_m2 = None
+                    if per_m2 is not None:
+                        yield f"{base}/{site_id}/{arr_id}/energy_kwh_per_m2", round(per_m2, 3)
 
 
 def _hash_payload(data: Dict[str, Any]) -> str:

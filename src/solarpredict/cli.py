@@ -28,7 +28,7 @@ from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
 from solarpredict.integrations import ha_mqtt
 from solarpredict.cli_config_tui import launch_config_tui
-from solarpredict.cli_utils import write_scenario, load_existing
+from solarpredict.cli_utils import write_scenario, load_existing, load_mqtt, load_run
 from solarpredict.cli_config_tui import launch_config_tui
 
 __version__ = "0.1.0"
@@ -262,37 +262,51 @@ def run(
     qc_enabled = qc_pvgis if qc_pvgis is not None else (raw_cfg.get("run", {}).get("qc_pvgis") if raw_cfg else False)
     if qc_enabled:
         qc_provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
-        qc_weather = qc_provider.get_forecast(
-            [{"id": site.id, "lat": site.location.lat, "lon": site.location.lon} for site in scenario.sites],
-            start=date_obj.isoformat(),
-            end=(date_obj + dt.timedelta(days=1)).isoformat(),
+        # Run a baseline simulation with PVGIS (hourly only) to get comparable POA energy per m².
+        qc_result = simulate_day(
+            scenario,
+            date=date_obj,
             timestep="1h",
+            weather_provider=qc_provider,
+            debug=debug_collector,
+            weather_label=weather_label,
         )
+
+        # Map (site,array) -> PVGIS POA kWh/m² for easy join back onto the main forecast output.
+        pvgis_poa_map = {}
+        for _, row in qc_result.daily.iterrows():
+            try:
+                pvgis_poa_map[(row["site"], row["array"])] = float(row["poa_kwh_m2"])
+            except Exception:
+                continue
+
+        # Emit ratios for visibility and keep prior warning logic, now comparing POA instead of GHI proxy.
         warnings = []
-        for site in scenario.sites:
-            qc_df = qc_weather[str(site.id)]
-            # align to forecast window and aggregate POA energy baseline
-            # reuse solar + pipeline by re-running simulate_day with qc provider? heavy; just integrate POA proxy.
-            # Using ghi_wm2 + dni/dhi would need geometry; instead compute baseline POA via scaling ghi ~ poa
-            # keep it simple: compare ghi and temp proxies
-            # forecast data is already in result.timeseries
-            for arr in site.arrays:
-                key = (site.id, arr.id)
-                forecast_ts = result.timeseries[key]
-                # Energy proxies
-                forecast_ghi = forecast_ts["poa_global"]
-                baseline_ghi = qc_df["ghi_wm2"].reindex(forecast_ghi.index, method="nearest")
-                ratio = float(forecast_ghi.sum() / baseline_ghi.sum()) if baseline_ghi.sum() else float("inf")
-                debug_collector.emit(
-                    "qc.pvgis_compare",
-                    {"site": site.id, "array": arr.id, "ratio": ratio},
-                    ts=forecast_ghi.index[0] if len(forecast_ghi.index) else None,
+        for _, row in result.daily.iterrows():
+            key = (row["site"], row["array"])
+            forecast_poa = float(row.get("poa_kwh_m2", 0) or 0)
+            baseline_poa = pvgis_poa_map.get(key)
+            ratio = float(forecast_poa / baseline_poa) if baseline_poa else float("inf")
+            debug_collector.emit(
+                "qc.pvgis_compare",
+                {"site": key[0], "array": key[1], "ratio": ratio, "baseline_poa_kwh_m2": baseline_poa},
+                ts=date_obj,
+            )
+            # Heuristic band: allow wider when cloudy (low POA).
+            cloudy = forecast_poa < 0.6  # kWh/m2 per day rough cloud marker
+            low, high = (0.3, 2.0) if cloudy else (0.6, 1.6)
+            if baseline_poa is not None and (ratio < low or ratio > high):
+                warnings.append(
+                    f"{key[0]}/{key[1]} PVGIS POA ratio {ratio:.2f} outside [{low},{high}] (cloudy={cloudy})"
                 )
-                # Basic heuristic thresholds
-                cloudy = forecast_ghi.mean() < 150  # W/m2 average rough heuristic
-                low, high = (0.3, 2.0) if cloudy else (0.6, 1.6)
-                if ratio < low or ratio > high:
-                    warnings.append(f"{site.id}/{arr.id} PVGIS ratio {ratio:.2f} outside [{low},{high}] (cloudy={cloudy})")
+
+        # Attach PVGIS POA baseline onto the main daily output so MQTT can publish it.
+        daily_with_pvgis = result.daily.copy()
+        daily_with_pvgis["pvgis_poa_kwh_m2"] = daily_with_pvgis.apply(
+            lambda row: pvgis_poa_map.get((row["site"], row["array"])), axis=1
+        )
+        result = type(result)(daily=daily_with_pvgis, timeseries=result.timeseries)
+
         for w in warnings:
             typer.echo(f"QC warning: {w}", err=True)
 
