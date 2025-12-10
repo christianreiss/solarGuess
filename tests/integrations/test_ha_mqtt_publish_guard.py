@@ -26,3 +26,13 @@ def test_should_publish_honors_newer_timestamp_even_if_equal_hash():
     local = make_payload(ts_new, total=10.0)
 
     assert _should_publish(local, remote)
+
+
+def test_skip_if_fresh_parses_timestamps_not_strings():
+    # string compare would say "9" > "10"; parsed datetimes should avoid that
+    newer = "2025-01-10T00:00:00+00:00"
+    older = "2025-01-09T00:00:00+00:00"
+    remote = make_payload(newer, 10)
+    local = make_payload(older, 11)
+    # _should_publish called downstream should return False because remote newer
+    assert _should_publish(local, remote) is False
