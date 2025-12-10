@@ -19,6 +19,7 @@ import typer
 import yaml
 
 from solarpredict.core.config import ConfigError, load_scenario
+from solarpredict.core import config as config_mod
 from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
 from solarpredict.engine.simulate import simulate_day
@@ -203,13 +204,19 @@ def run(
         None,
         help="Directory to cache PVGIS TMY responses (keyed by lat/lon). Only used when --weather-source=pvgis-tmy.",
     ),
+    qc_pvgis: Optional[bool] = typer.Option(
+        None,
+        help="Compare forecast against PVGIS TMY baseline (sanity check). If omitted, falls back to config run.qc_pvgis (default false).",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
 ):
     """Run a daily simulation for the provided scenario."""
 
+    raw_cfg = None
     try:
+        raw_cfg = config_mod._load_raw(config)  # type: ignore[attr-defined] - internal helper is fine here
         scenario = load_scenario(config)
     except ConfigError as exc:
         _exit_with_error(str(exc))
@@ -240,6 +247,44 @@ def run(
         debug=debug_collector,
         weather_label=weather_label,
     )
+
+    # Optional PVGIS QC sanity check: compare forecast energy/POA vs climatology.
+    qc_enabled = qc_pvgis if qc_pvgis is not None else (raw_cfg.get("run", {}).get("qc_pvgis") if raw_cfg else False)
+    if qc_enabled:
+        qc_provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
+        qc_weather = qc_provider.get_forecast(
+            [{"id": site.id, "lat": site.location.lat, "lon": site.location.lon} for site in scenario.sites],
+            start=date_obj.isoformat(),
+            end=(date_obj + dt.timedelta(days=1)).isoformat(),
+            timestep="1h",
+        )
+        warnings = []
+        for site in scenario.sites:
+            qc_df = qc_weather[str(site.id)]
+            # align to forecast window and aggregate POA energy baseline
+            # reuse solar + pipeline by re-running simulate_day with qc provider? heavy; just integrate POA proxy.
+            # Using ghi_wm2 + dni/dhi would need geometry; instead compute baseline POA via scaling ghi ~ poa
+            # keep it simple: compare ghi and temp proxies
+            # forecast data is already in result.timeseries
+            for arr in site.arrays:
+                key = (site.id, arr.id)
+                forecast_ts = result.timeseries[key]
+                # Energy proxies
+                forecast_ghi = forecast_ts["poa_global"]
+                baseline_ghi = qc_df["ghi_wm2"].reindex(forecast_ghi.index, method="nearest")
+                ratio = float(forecast_ghi.sum() / baseline_ghi.sum()) if baseline_ghi.sum() else float("inf")
+                debug_collector.emit(
+                    "qc.pvgis_compare",
+                    {"site": site.id, "array": arr.id, "ratio": ratio},
+                    ts=forecast_ghi.index[0] if len(forecast_ghi.index) else None,
+                )
+                # Basic heuristic thresholds
+                cloudy = forecast_ghi.mean() < 150  # W/m2 average rough heuristic
+                low, high = (0.3, 2.0) if cloudy else (0.6, 1.6)
+                if ratio < low or ratio > high:
+                    warnings.append(f"{site.id}/{arr.id} PVGIS ratio {ratio:.2f} outside [{low},{high}] (cloudy={cloudy})")
+        for w in warnings:
+            typer.echo(f"QC warning: {w}", err=True)
 
     daily = result.daily
     output_path = output or Path(f"results.{format}")
