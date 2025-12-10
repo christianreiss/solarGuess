@@ -318,6 +318,24 @@ Health/verification:
 - Use `--publish-retries N` to retry publish+verify if the broker is briefly unavailable; `--retry-delay` controls spacing.
 - Discovery publish can be disabled with `--no-discovery` or `mqtt.publish_discovery: false`.
 
+### Topic layout & dynamic allocation
+
+- Base topic defaults to `solarguess` (override with `--base-topic foo/bar`); trailing slashes are stripped.
+- Two retained JSON blobs when `publish_state` is true:
+  - `solarguess/forecast` — full forecast (sites, arrays, meta).
+  - `solarguess/availability` — simple online/offline heartbeat.
+- Optional scalar fan-out when `--publish-topics` or `mqtt.publish_topics: true` is set:
+  - Meta metrics: `solarguess/forecast/meta/<metric>` (e.g., `total_energy_kwh`, `peak_kw`).
+  - Per-site metrics: `solarguess/<site_id>/energy_kwh`, `.../peak_kw`, `.../peak_time`.
+  - Per-array metrics: `solarguess/<site_id>/<array_id>/energy_kwh`, `.../peak_kw`, `.../poa_wh_m2`.
+- Topic set is generated dynamically from the forecast payload at publish time; new sites/arrays appear automatically without config changes.
+- Verification (`--verify`) spot-checks a subset of scalar topics to ensure retained values match the freshly published forecast.
+
+Safety rules:
+
+- Discovery + state must travel together. If `publish_state=false`, also set `publish_discovery=false`; otherwise publish-mqtt aborts to avoid dangling HA entities.
+- Scalar topics obey the same freshness gate as the state blob; `--force` bypasses it if you need to republish identical payloads.
+
 ---
 
 Need help or want to contribute a module? Open an issue or PR; the repo prefers one-task-per-PR with tests + debug coverage per AGENTS.md.
