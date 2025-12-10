@@ -45,8 +45,26 @@ data = json.loads(out_path.read_text())
 if isinstance(data, dict) and "meta" in data and "sites" in data:
     raise SystemExit  # already hierarchical
 
-# Round selected numeric fields to 1 decimal
-def r1(x):
+# Rounded output (preserve meaningful peaks): energy 1dp, power/irradiance 3dp, temp 1dp
+def r_energy(x):
+    try:
+        return round(float(x), 1)
+    except Exception:
+        return x
+
+def r_power(x):
+    try:
+        return round(float(x), 3)
+    except Exception:
+        return x
+
+def r_poa(x):
+    try:
+        return round(float(x), 3)
+    except Exception:
+        return x
+
+def r_temp(x):
     try:
         return round(float(x), 1)
     except Exception:
@@ -63,12 +81,12 @@ for site_id, recs in by_site.items():
         clean = dict(rec)
         clean.pop("site", None)
         clean.pop("date", None)
-        if "energy_kwh" in clean: clean["energy_kwh"] = r1(clean["energy_kwh"])
-        if "peak_kw" in clean: clean["peak_kw"] = r1(clean["peak_kw"])
-        if "poa_kwh_m2" in clean: clean["poa_kwh_m2"] = r1(clean["poa_kwh_m2"])
-        if "temp_cell_max" in clean: clean["temp_cell_max"] = r1(clean["temp_cell_max"])
+        if "energy_kwh" in clean: clean["energy_kwh"] = r_energy(clean["energy_kwh"])
+        if "peak_kw" in clean: clean["peak_kw"] = r_power(clean["peak_kw"])
+        if "poa_kwh_m2" in clean: clean["poa_kwh_m2"] = r_poa(clean["poa_kwh_m2"])
+        if "temp_cell_max" in clean: clean["temp_cell_max"] = r_temp(clean["temp_cell_max"])
         recs_sorted.append(clean)
-    site_total = r1(sum(r.get("energy_kwh", 0) or 0 for r in recs_sorted))
+    site_total = r_energy(sum(r.get("energy_kwh", 0) or 0 for r in recs_sorted))
     sites.append({"id": site_id, "total_energy_kwh": site_total, "arrays": recs_sorted})
 
 sites = sorted(sites, key=lambda s: s["id"] or "")
@@ -77,7 +95,7 @@ meta = {
     "date": date,
     "timestep": "15m",
     "provider": "open-meteo",
-    "total_energy_kwh": r1(sum(s["total_energy_kwh"] for s in sites)),
+    "total_energy_kwh": r_energy(sum(s["total_energy_kwh"] for s in sites)),
     "site_count": len(sites),
     "array_count": sum(len(s["arrays"]) for s in sites),
 }
