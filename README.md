@@ -1,6 +1,6 @@
 # solarGuess
 
-Predict day-scale solar production with auditable, structured debug output. solarGuess ingests weather forecasts, runs a rigorous irradiance → DC → AC power chain for every array, and ships explainable results (timeseries + daily rollups) per site.
+Predict day-scale solar production with auditable, structured debug output. solarGuess ingests weather forecasts, runs a rigorous irradiance → DC → AC power chain for every array, and ships explainable results (timeseries + daily rollups) per site. Weather inputs come from Open-Meteo (live) and the EU JRC **PVGIS** (Photovoltaic Geographical Information System) TMY dataset for baselines and QA.
 
 ---
 
@@ -36,7 +36,7 @@ Utilities publish yesterday's production; asset owners need tomorrow's. solarGue
 > Think "weather forecast ➜ irradiance ➜ panel temperature ➜ DC ➜ AC ➜ energy".
 
 ```
-Forecast (GHI/DNI/DHI, Tair, wind)
+Forecast (GHI/DNI/DHI, Tair, wind) — Open-Meteo (live) / PVGIS TMY (baseline)
         │
     Step detection ──┐
         │            ▼
@@ -103,7 +103,7 @@ pip install -e .
 
     - `--weather-label end` matches Open-Meteo's backward-averaged timestamps. Switch to `start` if your provider reports forward averages.
     - Add `--format csv --output results.csv` if you need a spreadsheet-friendly dump.
-    - Want climatology instead of a live forecast? Pass `--weather-source pvgis-tmy` (optionally with `--pvgis-cache-dir .cache/pvgis`) to fetch PVGIS typical-year irradiance for your coordinates.
+    - Want climatology instead of a live forecast? Pass `--weather-source pvgis-tmy` (optionally with `--pvgis-cache-dir .cache/pvgis`) to fetch PVGIS (EU JRC Photovoltaic Geographical Information System) typical-year irradiance for your coordinates.
     - To sanity-check live forecasts against PVGIS, add `--qc-pvgis` or set `run.qc_pvgis: true` in the config; the CLI will emit `qc.pvgis_compare` debug events so you can diff live vs. typical energy/POA.
 
 3. **Inspect results.** The command prints JSON summary (sites/arrays with `energy_kwh`, `peak_kw`, etc.) and the optional `debug.jsonl` captures every stage for audits.
