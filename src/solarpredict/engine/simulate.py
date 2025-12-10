@@ -84,7 +84,10 @@ def _interval_hours(index: pd.DatetimeIndex, step_seconds: float, label: str) ->
 
     if len(index) == 1:
         fill = step_seconds if step_seconds > 0 else float("nan")
-        return pd.Series([fill / 3600.0], index=index, dtype=float)
+        hours = pd.Series([fill / 3600.0], index=index, dtype=float)
+        if hours.isna().any():
+            raise ValueError("Unable to infer interval hours from single sample; provide timestep")
+        return hours
 
     widths = deltas_fwd.copy()
     fallback = widths.dropna()
@@ -102,7 +105,12 @@ def _interval_hours(index: pd.DatetimeIndex, step_seconds: float, label: str) ->
             widths.iloc[-1] = widths.dropna().iloc[-1]
     # center: keep forward widths
 
-    return widths / 3600.0
+    hours = widths / 3600.0
+    if hours.isna().any():
+        raise ValueError(
+            "Unable to infer interval hours; provide a valid timestep or weather_label-compatible timestamps"
+        )
+    return hours
 
 
 def simulate_day(
