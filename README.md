@@ -320,13 +320,4 @@ Health/verification:
 
 ---
 
-## Roadmap ideas
-
-- Alternative weather providers (NOAA NBM, Meteomatics) with the same DebugCollector plumbing.
-- Probabilistic ensembles: run the pipeline across multiple weather scenarios and emit P10/P50/P90 energy bands.
-- FastAPI wrapper for on-demand forecasts with per-request debug streaming.
-- Built-in visual diff tooling for JSONL debug streams.
-
----
-
 Need help or want to contribute a module? Open an issue or PR; the repo prefers one-task-per-PR with tests + debug coverage per AGENTS.md.
