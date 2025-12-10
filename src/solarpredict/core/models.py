@@ -50,8 +50,12 @@ class PVArray:
             raise ValidationError("PVArray id is required")
         if not (0.0 <= self.tilt_deg <= 90.0):
             raise ValidationError("Tilt must be between 0 and 90 degrees")
+        # Accept common 0..360 inputs and normalize into [-180, 180] to keep geometry stable.
         if not (-180.0 <= self.azimuth_deg <= 180.0):
-            raise ValidationError("Azimuth must be between -180 and 180 degrees")
+            normalized = ((self.azimuth_deg + 180.0) % 360.0) - 180.0
+            object.__setattr__(self, "azimuth_deg", normalized)
+        if not (-180.0 <= self.azimuth_deg <= 180.0):
+            raise ValidationError("Azimuth must be between -180 and 180 degrees after normalization")
         if self.pdc0_w < 0:
             raise ValidationError("pdc0_w must be non-negative")
         if self.gamma_pdc > 0:

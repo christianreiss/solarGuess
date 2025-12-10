@@ -267,18 +267,16 @@ def simulate_day(
             arr_debug.emit("stage.ac", {"rows": len(pac)}, ts=times[0])
 
             pac_net = apply_losses(pac, array.losses_percent, debug=arr_debug)
-            arr_debug.emit("stage.aggregate", {"rows": len(pac_net)}, ts=times[0])
+            interval_h = _interval_hours(pac_net.index, step_seconds=step_seconds, label=weather_label)
+            arr_debug.emit(
+                "stage.aggregate",
+                {"rows": len(pac_net), "interval_h_mean": float(interval_h.mean()) if len(interval_h) else None},
+                ts=times[0],
+            )
 
-            # Aggregate daily metrics using per-interval widths to handle DST/gaps.
-            if len(pac_net) > 1:
-                dt_hours = pac_net.index.to_series().diff().dt.total_seconds().shift(-1) / 3600.0
-                dt_hours.iloc[-1] = dt_hours.iloc[-2] if len(dt_hours) > 1 else step_seconds / 3600.0
-            else:
-                dt_hours = pd.Series([step_seconds / 3600.0], index=pac_net.index)
-
-            energy_kwh = float(((pac_net / 1000.0) * dt_hours).sum())
+            energy_kwh = float(((pac_net / 1000.0) * interval_h).sum())
             peak_kw = float(pac_net.max() / 1000)
-            poa_kwh_m2 = float(((poa["poa_global"] / 1000.0) * dt_hours).sum())
+            poa_kwh_m2 = float(((poa["poa_global"] / 1000.0) * interval_h).sum())
             temp_cell_max = float(temps.max())
 
             daily_rows.append(
@@ -300,6 +298,7 @@ def simulate_day(
                     "pdc_w": data["pdc"],
                     "pac_w": pac,
                     "pac_net_w": pac_net,
+                    "interval_h": interval_h,
                 }
             )
             timeseries[(site.id, array.id)] = ts_df

@@ -18,6 +18,7 @@ import datetime as dt
 import hashlib
 import json
 import re
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -603,15 +604,26 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
 
     mqtt_cfg = file_cfg.get("mqtt", {}) if isinstance(file_cfg, dict) else {}
 
+    def _from_env_string(val):
+        """Allow yaml values like ${ENV_VAR} or env:ENV_VAR."""
+        if not isinstance(val, str):
+            return val
+        match = re.fullmatch(r"\$\{([^}]+)\}", val)
+        if match:
+            return os.getenv(match.group(1), "")
+        if val.startswith("env:"):
+            return os.getenv(val.split("env:", 1)[1], "")
+        return val
+
     def choose(key: str, default):
         cli_val = getattr(args, key.replace("-", "_"))
         if cli_val is not None:
             return cli_val
         if key in mqtt_cfg:
-            return mqtt_cfg[key]
+            return _from_env_string(mqtt_cfg[key])
         if key in file_cfg:
             # fallback for legacy flat keys
-            return file_cfg[key]
+            return _from_env_string(file_cfg[key])
         return default
 
     input_path = Path(mqtt_cfg.get("input", file_cfg.get("input", args.input)))

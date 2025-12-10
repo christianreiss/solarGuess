@@ -73,6 +73,8 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             eta_inv_nom=float(raw["eta_inv_nom"]),
             losses_percent=float(raw["losses_percent"]),
             temp_model=raw["temp_model"],
+            inverter_group_id=raw.get("inverter_group_id"),
+            inverter_pdc0_w=float(raw["inverter_pdc0_w"]) if raw.get("inverter_pdc0_w") is not None else None,
         )
     except ValidationError as exc:
         raise ConfigError(f"Invalid PVArray: {exc}") from exc

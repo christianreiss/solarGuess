@@ -36,6 +36,16 @@ def _write_fixture(tmp_path: Path) -> Path:
     return cfg
 
 
+def _write_fixture_with_run(tmp_path: Path, timestep: str = "15m") -> Path:
+    cfg = _write_fixture(tmp_path)
+    cfg.write_text(
+        cfg.read_text()
+        + "\nrun:\n"
+        + f"  timestep: {timestep}\n"
+    )
+    return cfg
+
+
 def test_help_exits_zero():
     res = runner.invoke(cli.app, ["--help"])
     assert res.exit_code == 0
@@ -125,3 +135,56 @@ def test_config_command_add_edit_delete(monkeypatch, tmp_path):
     scenario = load_scenario(path)
     assert len(scenario.sites) == 1
     assert scenario.sites[0].arrays[0].id == "array1"
+
+
+def test_scenario_to_dict_preserves_inverter_fields():
+    arr = PVArray(
+        id="a",
+        tilt_deg=30,
+        azimuth_deg=0,
+        pdc0_w=4000,
+        gamma_pdc=-0.004,
+        dc_ac_ratio=1.1,
+        eta_inv_nom=0.96,
+        losses_percent=5.0,
+        temp_model="close_mount_glass_glass",
+        inverter_group_id="g1",
+        inverter_pdc0_w=6500,
+    )
+    site = Site(id="s", location=Location(id="loc", lat=0, lon=0, tz="UTC"), arrays=[arr])
+    data = cli._scenario_to_dict(Scenario(sites=[site]))
+    arr_out = data["sites"][0]["arrays"][0]
+    assert arr_out["inverter_group_id"] == "g1"
+    assert arr_out["inverter_pdc0_w"] == 6500
+
+
+def test_run_uses_config_timestep_default(monkeypatch, tmp_path):
+    cfg = _write_fixture_with_run(tmp_path, timestep="15m")
+    out_json = tmp_path / "out.json"
+
+    captured = {}
+
+    def fake_simulate_day(scenario, date, timestep, weather_provider, debug, weather_label):
+        captured["timestep"] = timestep
+        df = pd.DataFrame([{"site": "site1", "array": "arr1", "energy_kwh": 1.0}])
+        return type("Result", (), {"daily": df, "timeseries": {}})()
+
+    monkeypatch.setattr(cli, "default_weather_provider", lambda debug: DummyWeatherProvider())
+    monkeypatch.setattr(cli, "simulate_day", fake_simulate_day)
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "run",
+            "--config",
+            str(cfg),
+            "--date",
+            "2025-06-01",
+            "--format",
+            "json",
+            "--output",
+            str(out_json),
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert captured["timestep"] == "15m"

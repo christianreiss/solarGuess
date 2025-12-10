@@ -55,7 +55,7 @@ def _scenario_to_dict(scenario: Scenario) -> dict:
         }
 
     def arr_dict(arr: PVArray) -> dict:
-        return {
+        data = {
             "id": arr.id,
             "tilt_deg": arr.tilt_deg,
             "azimuth_deg": arr.azimuth_deg,
@@ -66,6 +66,11 @@ def _scenario_to_dict(scenario: Scenario) -> dict:
             "losses_percent": arr.losses_percent,
             "temp_model": arr.temp_model,
         }
+        if arr.inverter_group_id is not None:
+            data["inverter_group_id"] = arr.inverter_group_id
+        if arr.inverter_pdc0_w is not None:
+            data["inverter_pdc0_w"] = arr.inverter_pdc0_w
+        return data
 
     return {
         "sites": [
@@ -127,6 +132,13 @@ def _prompt_array(existing: PVArray | None = None) -> PVArray:
     eta_inv_nom = prompt_float("eta_inv_nom", existing.eta_inv_nom if existing else 0.96)
     losses_percent = prompt_float("losses_percent", existing.losses_percent if existing else 5.0)
     temp_model = typer.prompt("temp_model", default=existing.temp_model if existing else "close_mount_glass_glass")
+    inverter_group_id = typer.prompt(
+        "Inverter group id (blank = none)", default=existing.inverter_group_id if existing else ""
+    ).strip() or None
+    inv_pdc_raw = typer.prompt(
+        "Inverter pdc0_w (blank = derive)", default=str(existing.inverter_pdc0_w) if existing and existing.inverter_pdc0_w is not None else ""
+    )
+    inverter_pdc0_w = float(inv_pdc_raw) if inv_pdc_raw.strip() else None
     try:
         return PVArray(
             id=arr_id,
@@ -138,6 +150,8 @@ def _prompt_array(existing: PVArray | None = None) -> PVArray:
             eta_inv_nom=eta_inv_nom,
             losses_percent=losses_percent,
             temp_model=temp_model,
+            inverter_group_id=inverter_group_id,
+            inverter_pdc0_w=inverter_pdc0_w,
         )
     except ValidationError as exc:  # pragma: no cover - validated via CLI tests
         _exit_with_error(str(exc))
@@ -191,7 +205,10 @@ def _load_existing(path: Path) -> List[Site]:
 def run(
     config: Path = typer.Option(Path("etc/config.yaml"), exists=True, readable=True, help="Scenario YAML/JSON file"),
     date: str = typer.Option(..., help="Target date (YYYY-MM-DD)"),
-    timestep: str = typer.Option("1h", help="Forecast timestep, e.g. 1h or 15m"),
+    timestep: Optional[str] = typer.Option(
+        None,
+        help="Forecast timestep, e.g. 1h or 15m. Defaults to run.timestep in config, else 1h.",
+    ),
     weather_label: str = typer.Option(
         "end",
         help="Meaning of weather timestamps: 'end' (backward-averaged, default), 'start' (forward-averaged), or 'center'.",
@@ -239,10 +256,16 @@ def run(
     else:
         _exit_with_error(f"Unsupported weather_source '{weather_source}'")
 
+    effective_timestep = (
+        timestep
+        or (raw_cfg.get("run", {}).get("timestep") if raw_cfg else None)
+        or "1h"
+    )
+
     result = simulate_day(
         scenario,
         date=date_obj,
-        timestep=timestep,
+        timestep=effective_timestep,
         weather_provider=provider,
         debug=debug_collector,
         weather_label=weather_label,

@@ -35,18 +35,18 @@ def test_pvarray_validation():
             losses_percent=14,
             temp_model="noct",
         )
-    with pytest.raises(ValidationError):
-        PVArray(
-            id="arr",
-            tilt_deg=10,
-            azimuth_deg=200,
-            pdc0_w=1000,
-            gamma_pdc=-0.003,
-            dc_ac_ratio=1.2,
-            eta_inv_nom=0.96,
-            losses_percent=14,
-            temp_model="noct",
-        )
+    arr_norm = PVArray(
+        id="arr",
+        tilt_deg=10,
+        azimuth_deg=999,
+        pdc0_w=1000,
+        gamma_pdc=-0.003,
+        dc_ac_ratio=1.2,
+        eta_inv_nom=0.96,
+        losses_percent=14,
+        temp_model="noct",
+    )
+    assert arr_norm.azimuth_deg == -81
     with pytest.raises(ValidationError):
         PVArray(
             id="arr",
@@ -71,6 +71,18 @@ def test_pvarray_validation():
             losses_percent=14,
             temp_model="noct",
         )
+    arr = PVArray(
+        id="arr",
+        tilt_deg=10,
+        azimuth_deg=270,
+        pdc0_w=1000,
+        gamma_pdc=-0.003,
+        dc_ac_ratio=1.2,
+        eta_inv_nom=0.96,
+        losses_percent=14,
+        temp_model="noct",
+    )
+    assert arr.azimuth_deg == -90
     with pytest.raises(ValidationError):
         PVArray(
             id="arr",
