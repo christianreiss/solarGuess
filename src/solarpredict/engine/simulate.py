@@ -65,6 +65,46 @@ def _apply_time_label(times: pd.DatetimeIndex, step_seconds: float, label: str) 
     raise ValueError(f"Unsupported time label: {label}")
 
 
+def _interval_hours(index: pd.DatetimeIndex, step_seconds: float, label: str) -> pd.Series:
+    """Interval widths (hours) consistent with timestamp labeling.
+
+    - label=="start": sample marks interval start → use forward delta (t[i+1]-t[i]).
+    - label=="end": sample marks interval end   → use backward delta (t[i]-t[i-1]).
+    - label=="center": treat like start; symmetric choice is acceptable.
+
+    First/last interval gets the declared step when provided, otherwise the nearest non-null
+    delta so gappy series still integrate reasonably.
+    """
+
+    if len(index) == 0:
+        return pd.Series([], index=index, dtype=float)
+
+    label = (label or "end").lower()
+    deltas_fwd = index.to_series().diff().shift(-1).dt.total_seconds()
+
+    if len(index) == 1:
+        fill = step_seconds if step_seconds > 0 else float("nan")
+        return pd.Series([fill / 3600.0], index=index, dtype=float)
+
+    widths = deltas_fwd.copy()
+    fallback = widths.dropna()
+    filler = step_seconds if step_seconds > 0 else (fallback.iloc[-1] if len(fallback) else float("nan"))
+    widths.iloc[-1] = filler
+
+    if label not in {"start", "end", "center"}:
+        raise ValueError(f"Unsupported time label: {label}")
+
+    if label == "end":
+        widths = widths.shift(1)
+        first_fallback = step_seconds if step_seconds > 0 else (fallback.iloc[0] if len(fallback) else float("nan"))
+        widths.iloc[0] = first_fallback
+        if len(widths) > 1 and pd.isna(widths.iloc[-1]):
+            widths.iloc[-1] = widths.dropna().iloc[-1]
+    # center: keep forward widths
+
+    return widths / 3600.0
+
+
 def simulate_day(
     scenario: Scenario,
     date: dt.date,
