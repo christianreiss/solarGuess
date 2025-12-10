@@ -139,9 +139,20 @@ def simulate_day(
     daily_rows = []
     timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
 
+    required_cols = {"ghi_wm2", "dni_wm2", "dhi_wm2", "temp_air_c", "wind_ms"}
+
     for site in scenario.sites:
         wx = weather[str(site.id)]
         site_debug = ScopedDebugCollector(debug, site=site.id)
+
+        missing = required_cols.difference(wx.columns)
+        if missing:
+            site_debug.emit(
+                "weather.schema_error",
+                {"missing_columns": sorted(missing), "available": sorted(wx.columns)},
+                ts=wx.index[0] if len(wx.index) else None,
+            )
+            raise ValueError(f"Weather data for site {site.id} missing required columns: {sorted(missing)}")
 
         # Enforce exact [date, date+1) window regardless of provider inclusivity semantics.
         if hasattr(wx.index, "tz") and wx.index.tz is not None:
