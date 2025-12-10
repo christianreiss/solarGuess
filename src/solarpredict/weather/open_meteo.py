@@ -21,6 +21,8 @@ _VAR_MAP = {
 
 
 class OpenMeteoWeatherProvider(WeatherProvider):
+    _COORD_TOLERANCE_DEG = 0.01  # ~1.1 km; generous enough for rounding but avoids cross-city swaps
+
     def __init__(
         self,
         base_url: str = "https://api.open-meteo.com/v1/forecast",
@@ -121,9 +123,34 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         if not isinstance(data, list):  # Open-Meteo returns list for multiple coordinates
             data = [data]
 
+        # Build an index of requested locations to reconcile responses even if Open-Meteo reorders/omits entries.
+        requested = [
+            {
+                "id": str(loc["id"]),
+                "lat": float(loc["lat"]),
+                "lon": float(loc["lon"]),
+            }
+            for loc in locations
+        ]
+        unmatched_idxs = set(range(len(requested)))
+
+        def _match_location_id(lat: float, lon: float) -> str:
+            for idx in list(unmatched_idxs):
+                req = requested[idx]
+                if abs(lat - req["lat"]) <= self._COORD_TOLERANCE_DEG and abs(lon - req["lon"]) <= self._COORD_TOLERANCE_DEG:
+                    unmatched_idxs.remove(idx)
+                    return req["id"]
+            raise ValueError(
+                f"Open-Meteo returned unexpected coordinate ({lat}, {lon}); no requested location within tolerance"
+            )
+
         results: Dict[str, pd.DataFrame] = {}
         for idx, loc_payload in enumerate(data):
-            loc_id = params["location_ids"].split(",")[idx] if params.get("location_ids") else str(idx)
+            lat = loc_payload.get("latitude")
+            lon = loc_payload.get("longitude")
+            if lat is None or lon is None:
+                raise ValueError("Open-Meteo response missing latitude/longitude for a location entry")
+            loc_id = _match_location_id(float(lat), float(lon))
             df = self._parse_single(loc_payload)
             self.debug.emit(
                 "weather.response_meta",
@@ -131,12 +158,21 @@ class OpenMeteoWeatherProvider(WeatherProvider):
                     "model": loc_payload.get("model"),
                     "timezone": loc_payload.get("timezone"),
                     "time_key": "minutely_15" if "minutely_15" in loc_payload else "hourly",
+                    "lat": lat,
+                    "lon": lon,
+                    "matched_id": loc_id,
                 },
                 ts=df.index[0] if not df.empty else None,
                 site=loc_id,
             )
             self._emit_summary(loc_id, df)
             results[loc_id] = df
+
+        if unmatched_idxs:
+            missing = [requested[i]["id"] for i in sorted(unmatched_idxs)]
+            raise ValueError(
+                f"Open-Meteo response missing {len(missing)} requested locations; unmatched ids: {missing}"
+            )
         return results
 
 
