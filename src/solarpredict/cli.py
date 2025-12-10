@@ -198,6 +198,10 @@ def run(
         "open-meteo",
         help="Weather provider: 'open-meteo' (default) or 'pvgis-tmy' (typical meteorological year).",
     ),
+    pvgis_cache_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory to cache PVGIS TMY responses (keyed by lat/lon). Only used when --weather-source=pvgis-tmy.",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -219,7 +223,7 @@ def run(
     if weather_source == "open-meteo":
         provider = default_weather_provider(debug=debug_collector)
     elif weather_source == "pvgis-tmy":
-        provider = PVGISWeatherProvider(debug=debug_collector)
+        provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
     else:
         _exit_with_error(f"Unsupported weather_source '{weather_source}'")
 
