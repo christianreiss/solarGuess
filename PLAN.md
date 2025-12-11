@@ -16,14 +16,14 @@ Format: `X.Y.Z` where **X** is one self-contained module (doable in a single tas
 
 2. Damping (morning/evening attenuation)
 2.1. Config  
-2.1.1. Per-array `damping_morning`/`damping_evening` (0–1) with optional single `damping` tuple.  
-2.1.2. Validation + docs; defaults to 1.0 (no effect).
+2.1.1. Per-array `damping_morning`/`damping_evening` (0–1) with optional single `damping` tuple. **DONE**  
+2.1.2. Validation + docs; defaults to 1.0 (no effect). **DONE (validation/defaults)**  
 2.2. Application  
-2.2.1. Apply smooth (e.g., cosine taper) attenuation around civil sunrise/sunset or configurable window.  
-2.2.2. Hook into engine after POA or at pac_net; ensure multiplicative and deterministic.  
-2.2.3. Debug: emit attenuation window and min/max applied factor.
+2.2.1. Apply smooth (e.g., cosine taper) attenuation around civil sunrise/sunset or configurable window. **DONE (1.5h cosine taper)**  
+2.2.2. Hook into engine after POA or at pac_net; ensure multiplicative and deterministic. **DONE (applied to POA before DC)**  
+2.2.3. Debug: emit attenuation window and min/max applied factor. **DONE**  
 2.3. Tests  
-2.3.1. Deterministic unit test on synthetic day: verify AM/PM watts reduced by expected factor; midday untouched.
+2.3.1. Deterministic unit test on synthetic day: verify AM/PM watts reduced by expected factor; midday untouched. **DONE**
 
 3. Interval Export
 3.1. CLI/format  
