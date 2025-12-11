@@ -10,6 +10,7 @@ import pandas as pd
 
 from solarpredict.core.debug import DebugCollector, NullDebugCollector, ScopedDebugCollector
 from solarpredict.core.models import Scenario
+from solarpredict.solar.decomposition import fill_dni_dhi
 from solarpredict.pv.power import apply_losses, inverter_pdc0_from_dc_ac_ratio, pvwatts_ac, pvwatts_dc
 from solarpredict.solar.irradiance import poa_irradiance
 from solarpredict.solar.position import solar_position
@@ -386,6 +387,8 @@ def simulate_day(
     debug: DebugCollector | None = None,
     weather_label: str = "end",
     weather_mode: str | None = None,
+    iam_model: str | None = None,
+    iam_coefficient: float | None = None,
 ) -> SimulationResult:
     """Run full-day simulation for all sites/arrays in scenario."""
 
@@ -493,15 +496,27 @@ def simulate_day(
         array_data = {}
         for array in site.arrays:
             arr_debug = ScopedDebugCollector(site_debug, array=array.id)
+            dni, dhi = fill_dni_dhi(
+                ghi_wm2=wx["ghi_wm2"],
+                solar_zenith_deg=solar_pos["zenith"],
+                dni_wm2=wx.get("dni_wm2"),
+                dhi_wm2=wx.get("dhi_wm2"),
+                debug=arr_debug,
+            )
+            arr_iam_model = iam_model if iam_model is not None else array.iam_model
+            arr_iam_coeff = iam_coefficient if iam_coefficient is not None else array.iam_coefficient
+
             poa = poa_irradiance(
                 surface_tilt=array.tilt_deg,
                 surface_azimuth=array.azimuth_deg,
-                dni=wx["dni_wm2"],
+                dni=dni,
                 ghi=wx["ghi_wm2"],
-                dhi=wx["dhi_wm2"],
+                dhi=dhi,
                 solar_zenith=solar_pos["zenith"],
                 solar_azimuth=solar_pos["azimuth"],
                 horizon_deg=array.horizon_deg,
+                iam_model=arr_iam_model,
+                iam_coefficient=arr_iam_coeff,
                 debug=arr_debug,
             )
             arr_debug.emit("stage.poa", {"rows": len(poa)}, ts=times[0])

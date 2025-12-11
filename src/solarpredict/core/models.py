@@ -47,6 +47,8 @@ class PVArray:
     horizon_deg: Optional[list[float]] = None
     damping_morning: float = 1.0
     damping_evening: float = 1.0
+    iam_model: Optional[str] = None
+    iam_coefficient: Optional[float] = None
 
     def __post_init__(self):
         if not self.id:
@@ -91,6 +93,13 @@ class PVArray:
                 if not (0.0 <= fval <= 90.0):
                     raise ValidationError("horizon_deg values must be between 0 and 90 degrees")
                 cleaned.append(fval)
+        if self.iam_model is not None:
+            allowed = {"ashrae"}
+            model = self.iam_model.lower()
+            if model not in allowed:
+                raise ValidationError(f"iam_model must be one of {sorted(allowed)}")
+            if self.iam_coefficient is not None and self.iam_coefficient < 0:
+                raise ValidationError("iam_coefficient must be non-negative when provided")
             object.__setattr__(self, "horizon_deg", cleaned)
 
 

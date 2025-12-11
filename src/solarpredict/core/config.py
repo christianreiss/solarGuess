@@ -32,7 +32,7 @@ _DEF_REQUIRED_ARRAY_KEYS = {
     "losses_percent",
     "temp_model",
 }
-_OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening"}
+_OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening", "iam_model", "iam_coefficient"}
 
 
 # Run block accepts optional tuning; validated when referenced.
@@ -107,6 +107,8 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
 
         dm = float(damping_morning) if damping_morning is not None else 1.0
         de = float(damping_evening) if damping_evening is not None else 1.0
+        iam_model = raw.get("iam_model")
+        iam_coefficient = float(raw["iam_coefficient"]) if raw.get("iam_coefficient") is not None else None
         return PVArray(
             id=raw["id"],
             tilt_deg=float(raw["tilt_deg"]),
@@ -122,6 +124,8 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             horizon_deg=horizon,
             damping_morning=dm,
             damping_evening=de,
+            iam_model=iam_model,
+            iam_coefficient=iam_coefficient,
         )
     except ValidationError as exc:
         raise ConfigError(f"Invalid PVArray: {exc}") from exc

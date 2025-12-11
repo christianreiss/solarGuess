@@ -187,6 +187,14 @@ def run(
         None,
         help="Weather processing mode: 'standard' (use provider irradiance) or 'cloud-scaled' (clear-sky scaled by cloud cover). Defaults to run.weather_mode or 'standard'.",
     ),
+    iam_model: Optional[str] = typer.Option(
+        None,
+        help="Incidence angle modifier model (ashrae). If unset, defaults to array iam_model when provided.",
+    ),
+    iam_coefficient: Optional[float] = typer.Option(
+        None,
+        help="Coefficient for IAM model (e.g., ASHRAE b0).",
+    ),
     pvgis_cache_dir: Optional[Path] = typer.Option(
         None,
         help="Directory to cache PVGIS TMY responses (keyed by lat/lon). Only used when --weather-source=pvgis-tmy.",
@@ -349,6 +357,8 @@ def run(
         debug=debug_collector,
         weather_label=weather_label,
         weather_mode=weather_mode,
+        iam_model=iam_model,
+        iam_coefficient=iam_coefficient,
     )
 
     # Optional actual adjustment

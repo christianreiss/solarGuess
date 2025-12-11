@@ -5,6 +5,8 @@ import pandas as pd
 import pvlib
 
 from solarpredict.core.debug import DebugCollector, NullDebugCollector
+from solarpredict.solar.incidence import apply_iam
+
 
 # Numerical noise from pvlib or inconsistent inputs can yield tiny negatives; zero them out.
 _NEG_EPS = 1e-6
@@ -50,6 +52,8 @@ def poa_irradiance(
     albedo: float = 0.2,
     model: str = "perez",
     horizon_deg: list[float] | None = None,
+    iam_model: str | None = None,
+    iam_coefficient: float | None = None,
     debug: DebugCollector | None = None,
 ) -> pd.DataFrame:
     """Compute plane-of-array irradiance using pvlib's total irradiance models.
@@ -107,6 +111,8 @@ def poa_irradiance(
     # Ensure deterministic column order and clip negatives.
     columns = ["poa_global", "poa_direct", "poa_diffuse", "poa_ground_diffuse"]
     df = pd.DataFrame({col: df.get(col) for col in columns}, index=dni.index)
+    aoi = poa.get("aoi") if isinstance(poa, dict) else None
+    df = apply_iam(df, iam_model=iam_model, iam_coefficient=iam_coefficient, aoi=aoi, debug=debug)
     df = df.apply(lambda s: s.where(s > -_NEG_EPS, 0.0).clip(lower=0.0))
 
     _emit_summary(debug, df)
