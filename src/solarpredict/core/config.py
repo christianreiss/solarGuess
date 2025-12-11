@@ -39,6 +39,7 @@ _OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_ev
 _OPTIONAL_RUN_KEYS = {
     "actual_kwh_today",
     "actual_limit_suppress",
+    "actual_as_of",
     "timestep",
     "format",
     "output",

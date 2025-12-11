@@ -59,6 +59,8 @@ def _ensure_run_defaults(run: dict) -> dict:
         base["actual_kwh_today"] = None
     if "actual_limit_suppress" not in base:
         base["actual_limit_suppress"] = False
+    if "actual_as_of" not in base:
+        base["actual_as_of"] = None
     return base
 
 

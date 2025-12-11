@@ -94,7 +94,7 @@ def apply_actual_adjustment(
         raise ValueError("actual_kwh_today must be non-negative")
 
     if actual == 0:
-        debug.emit("actual.adjust.skip", {"reason": "reset", "actual_kwh_today": actual})
+        debug.emit("actual.adjust.skip", {"reason": "reset", "actual_kwh_today": actual}, ts=now_ts)
         return result
 
     if not isinstance(result, SimulationResult):
@@ -102,17 +102,22 @@ def apply_actual_adjustment(
         result = SimulationResult(daily=getattr(result, "daily", pd.DataFrame()), timeseries=getattr(result, "timeseries", {}))
 
     if not result.timeseries:
-        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"})
+        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"}, ts=now_ts)
         return result
 
     # Pick a representative index to derive timezone and window.
     sample_df = next(iter(result.timeseries.values()))
     if sample_df is None or sample_df.empty:
-        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"})
+        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"}, ts=now_ts)
         return result
 
     ts_index = sample_df.index
     now_ts = now_ts or _now_like(ts_index)
+    # Clamp to simulation window to keep backfills/future runs deterministic.
+    if now_ts < ts_index.min():
+        now_ts = ts_index.min()
+    if now_ts > ts_index.max():
+        now_ts = ts_index.max()
 
     # Compute cumulative energy up to now and remaining energy.
     cumulative_kwh = 0.0
@@ -137,22 +142,20 @@ def apply_actual_adjustment(
         debug.emit(
             "actual.adjust.skip",
             {"reason": "zero_predicted", "actual_kwh_today": actual, "now": str(now_ts)},
+            ts=now_ts,
         )
         return result
 
-    scale = (actual - cumulative_kwh) / future_energy_kwh + 1 if future_energy_kwh > 0 else 1.0
-    # If no future energy remains, nothing to scale; keep as-is.
     if future_energy_kwh == 0:
         debug.emit(
             "actual.adjust.skip",
             {"reason": "no_future_samples", "actual_kwh_today": actual, "cumulative_kwh": cumulative_kwh},
+            ts=now_ts,
         )
         return result
 
-    # Avoid negative scaling; clamp at zero.
-    if scale < 0:
-        scale = 0.0
-
+    # Bias-correct remaining intervals by ratio of observed vs predicted so far.
+    scale = max(0.0, actual / cumulative_kwh)
     adjusted_timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
 
     for key, df in result.timeseries.items():
@@ -209,6 +212,7 @@ def apply_actual_adjustment(
             "now": str(now_ts),
             "future_samples": future_sample_count,
         },
+        ts=now_ts,
     )
 
     return SimulationResult(daily=adjusted_daily, timeseries=adjusted_timeseries)

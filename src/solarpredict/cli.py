@@ -199,6 +199,10 @@ def run(
         None,
         help="Suppress output when applying actual adjustment fails validation (legacy limit=0 behaviour).",
     ),
+    actual_as_of: Optional[str] = typer.Option(
+        None,
+        help="Timestamp (ISO) representing 'now' for actual scaling; defaults to current time clamped to simulation window.",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -284,11 +288,23 @@ def run(
     # Optional actual adjustment
     actual_cfg = run_section.get("actual_kwh_today") if run_section else None
     suppress_cfg = run_section.get("actual_limit_suppress") if run_section else None
+    asof_cfg = run_section.get("actual_as_of") if run_section else None
     effective_actual = actual_kwh_today if actual_kwh_today is not None else actual_cfg
     suppress_flag = actual_limit_suppress if actual_limit_suppress is not None else suppress_cfg
+    as_of_ts = actual_as_of if actual_as_of is not None else asof_cfg
+    parsed_as_of = None
+    if as_of_ts:
+        try:
+            parsed_as_of = pd.Timestamp(as_of_ts)
+        except Exception as exc:
+            debug_collector.emit("actual.adjust.error", {"error": f"invalid actual_as_of: {exc}"}, ts=date_obj)
+            if suppress_flag:
+                typer.echo("Invalid actual_as_of; suppressing output per limit flag", err=True)
+                raise typer.Exit(code=1)
+
     if effective_actual is not None:
         try:
-            result = apply_actual_adjustment(result, effective_actual, debug_collector)
+            result = apply_actual_adjustment(result, effective_actual, debug_collector, now_ts=parsed_as_of)
         except Exception as exc:
             debug_collector.emit("actual.adjust.error", {"error": str(exc)}, ts=date_obj)
             if suppress_flag:

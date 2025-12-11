@@ -39,16 +39,16 @@ Format: `X.Y.Z` where **X** is one self-contained module (doable in a single tas
     - [x] 3.3.1. CLI test generates intervals file; validate columns and first/last cumulative values.  
     - [x] 3.3.2. Compileall/pytest coverage updates.  
 
-4. Actual Production Adjustment
-4.1. Config/CLI  
-4.1.1. Add `actual_kwh_today` (float) and optional `limit=0`-style suppress flag.  
-4.1.2. Validation and docs.
-4.2. Algorithm  
-4.2.1. Compare predicted cumulative (up to current time) vs provided actual; scale remaining intervals proportionally.  
-4.2.2. Idempotent reset when actual=0; clamp to non-negative; avoid double-application.  
-4.2.3. Debug: emit before/after energy and scale factor.
-4.3. Tests  
-4.3.1. Synthetic timeseries: ensure scaling only future intervals; zero resets forecast.
+- [x] 4. Actual Production Adjustment  
+  - [x] 4.1. Config/CLI  
+    - [x] 4.1.1. Add `actual_kwh_today` (float) and optional `limit=0`-style suppress flag.  
+    - [x] 4.1.2. Validation and docs.  
+  - [x] 4.2. Algorithm  
+    - [x] 4.2.1. Compare predicted cumulative (up to current time) vs provided actual; scale remaining intervals proportionally.  
+    - [x] 4.2.2. Idempotent reset when actual=0; clamp to non-negative; avoid double-application.  
+    - [x] 4.2.3. Debug: emit before/after energy and scale factor.  
+  - [x] 4.3. Tests  
+    - [x] 4.3.1. Synthetic timeseries: ensure scaling only future intervals; zero resets forecast.  
 
 5. Load Window Finder
 5.1. Inputs  
