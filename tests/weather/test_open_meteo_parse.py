@@ -21,6 +21,8 @@ def test_parse_fixture_tz_and_columns():
     expected_cols = {"temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2", "cloudcover"}
     assert expected_cols.issubset(results.columns)
     assert results[["temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2"]].notna().all().all()
+    # Ensure cloudcover exists when requested via minutely_15
+    assert "cloudcover" in results.columns
 
 
 def test_parse_converts_wind_kmh_to_ms_when_needed():

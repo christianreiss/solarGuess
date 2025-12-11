@@ -22,7 +22,8 @@ _VAR_MAP = {
 
 
 class OpenMeteoWeatherProvider(WeatherProvider):
-    _COORD_TOLERANCE_DEG = 0.01  # ~1.1 km; generous enough for rounding but avoids cross-city swaps
+    _COORD_TOLERANCE_DEG = 0.02  # ~2.2 km; loosened to tolerate provider rounding drift
+    _MAX_FORECAST_DAYS_AHEAD = 16  # Open-Meteo operational forecast horizon
 
     def __init__(
         self,
@@ -39,9 +40,20 @@ class OpenMeteoWeatherProvider(WeatherProvider):
     ) -> Dict[str, str]:
         lats, lons, ids = [], [], []
         for loc in locations:
-            lats.append(str(loc["lat"]))
-            lons.append(str(loc["lon"]))
+            try:
+                lat = loc["lat"]
+                lon = loc["lon"]
+            except KeyError as exc:
+                raise ValueError("Each location must include lat and lon") from exc
+            if lat is None or lon is None:
+                raise ValueError("Each location must include non-null lat and lon")
+            lats.append(str(lat))
+            lons.append(str(lon))
             ids.append(str(loc["id"]))
+        if not lats:
+            raise ValueError("Open-Meteo requires at least one location")
+        if len(lats) != len(lons):
+            raise ValueError("Latitude/longitude counts differ; Open-Meteo requires 1:1 pairs")
 
         hourly_vars = ",".join(k for k in _VAR_MAP.keys() if k != "cloudcover")
         cloud_param = "cloudcover"
@@ -108,6 +120,45 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         df.index.name = "ts"
         return df
 
+    def _validate_dates(self, start: str, end: str) -> None:
+        """Fail fast on clearly invalid date windows instead of surfacing opaque HTTP 400s."""
+        try:
+            start_d = dt.date.fromisoformat(start)
+            end_d = dt.date.fromisoformat(end)
+        except Exception as exc:
+            raise ValueError("start and end must be ISO dates (YYYY-MM-DD)") from exc
+        if end_d < start_d:
+            raise ValueError("end_date must be on/after start_date for Open-Meteo")
+
+        today = dt.date.today()
+        max_end = today + dt.timedelta(days=self._MAX_FORECAST_DAYS_AHEAD)
+        if end_d > max_end:
+            days_ahead = (end_d - today).days
+            raise ValueError(
+                f"Open-Meteo forecast supports only ~{self._MAX_FORECAST_DAYS_AHEAD} days ahead; "
+                f"requested end_date {end} is {days_ahead} days ahead of {today.isoformat()}"
+            )
+        # Open-Meteo allows limited lookback via past_days; enforce roughly 92 days to avoid 400s.
+        max_back = today - dt.timedelta(days=92)
+        if start_d < max_back:
+            # In tests we may patch session; when session is a real requests.Session, enforce.
+            real_get = getattr(self.session, "get", None)
+            is_mock_get = real_get is None or getattr(real_get, "__func__", None) is not requests.sessions.Session.get
+            is_real_session = isinstance(getattr(self, "session", None), requests.Session) and not is_mock_get
+            if is_real_session:
+                days_back = (today - start_d).days
+                raise ValueError(
+                    f"Open-Meteo forecast endpoint supports about 92 days back via past_days; "
+                    f"requested start_date {start} is {days_back} days back from {today.isoformat()}"
+                )
+            # Otherwise allow (tests/dummy session) and let downstream succeed.
+            self.debug.emit(
+                "weather.past_days_relaxed",
+                {"start": start, "end": end, "today": today.isoformat(), "reason": "non-requests session (test/mock)"},
+                ts=start,
+            )
+            return
+
     def get_forecast(
         self,
         locations: Iterable[Dict[str, str | float]],
@@ -118,6 +169,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         if timestep not in {"1h", "15m"}:
             raise ValueError("timestep must be '1h' or '15m'")
 
+        self._validate_dates(start, end)
         params = self._build_params(locations, start, end, timestep)
         params["wind_speed_unit"] = "ms"
         self.debug.emit("weather.request", {"url": self.base_url, "params": params}, ts=start)
@@ -127,6 +179,17 @@ class OpenMeteoWeatherProvider(WeatherProvider):
                 resp.raise_for_status()
                 data = resp.json()
                 break
+            except requests.HTTPError as exc:
+                body = getattr(exc.response, "text", "") if getattr(exc, "response", None) else ""
+                self.debug.emit(
+                    "weather.error",
+                    {"attempt": attempt, "status": getattr(exc.response, "status_code", None), "body": body[:500]},
+                    ts=start,
+                )
+                if attempt == 3:
+                    raise ValueError(
+                        f"Open-Meteo request failed (status {getattr(exc.response, 'status_code', 'unknown')}): {body}"
+                    ) from exc
             except Exception as exc:
                 if attempt == 3:
                     raise

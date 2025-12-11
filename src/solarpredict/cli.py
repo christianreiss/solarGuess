@@ -21,7 +21,7 @@ import yaml
 
 from solarpredict.core.config import ConfigError, load_scenario
 from solarpredict.core import config as config_mod
-from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector
+from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector, build_debug_collector, JsonDebugWriter
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
 from solarpredict.engine.simulate import apply_actual_adjustment, simulate_day
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
@@ -219,7 +219,7 @@ def run(
         None,
         help="Optional energy requirement (Wh) a window must satisfy to qualify.",
     ),
-    debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
+    debug: Optional[Path] = typer.Option(None, help="Write debug JSONL/JSON to this path (json = single document)"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
     intervals: Optional[Path] = typer.Option(
@@ -242,7 +242,7 @@ def run(
     except ValueError:
         _exit_with_error("date must be YYYY-MM-DD")
 
-    debug_collector = JsonlDebugWriter(debug) if debug else NullDebugCollector()
+    debug_collector = build_debug_collector(debug) if debug else NullDebugCollector()
     output_path = output or Path(f"results.{format}")
 
     if not force and output_path.exists():
@@ -272,13 +272,24 @@ def run(
                 )
                 raise typer.Exit(code=0)
 
-    weather_source = weather_source.lower()
     run_section = raw_cfg.get("run", {}) if raw_cfg else {}
 
     # Resolve weather_mode with config fallback.
     effective_weather_mode = weather_mode or run_section.get("weather_mode") or "standard"
     weather_mode = effective_weather_mode.lower()
+    weather_source = weather_source.lower()
     if weather_source == "open-meteo":
+        # Open-Meteo forecast API only supports ~16 days ahead and (depending on model) ~92 days back via past_days.
+        horizon_forward_days = 16
+        horizon_backward_days = 92
+        delta_days = (date_obj - dt.date.today()).days
+        if delta_days > horizon_forward_days or delta_days < -horizon_backward_days:
+            direction = "ahead" if delta_days > 0 else "ago"
+            _exit_with_error(
+                f"Open-Meteo forecast covers about {horizon_backward_days} days back and {horizon_forward_days} days forward; "
+                f"requested {abs(delta_days)} days {direction} ({date_obj}). "
+                "Use --weather-source pvgis-tmy for historical/baseline dates or pick a date within the supported window."
+            )
         provider = default_weather_provider(debug=debug_collector)
     elif weather_source == "pvgis-tmy":
         provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
@@ -388,6 +399,7 @@ def run(
             except Exception:
                 continue
 
+        scale_map = {}
         # Emit ratios for visibility and keep prior warning logic, now comparing POA instead of GHI proxy.
         warnings = []
         for _, row in result.daily.iterrows():
@@ -395,6 +407,8 @@ def run(
             forecast_poa = float(row.get("poa_kwh_m2", 0) or 0)
             baseline_poa = pvgis_poa_map.get(key)
             ratio = float(forecast_poa / baseline_poa) if baseline_poa else float("inf")
+            # Track scale factors so we can apply the clamp to timeseries as well for consistency.
+            scale_map[key] = 1.0
             debug_collector.emit(
                 "qc.pvgis_compare",
                 {"site": key[0], "array": key[1], "ratio": ratio, "baseline_poa_kwh_m2": baseline_poa},
@@ -427,6 +441,7 @@ def run(
                 continue
             cap = 1.6 if ratio > 1.6 else 0.6
             scale = cap / ratio if ratio != 0 else 1.0
+            scale_map[(row["site"], row["array"])] = scale
             row = row.copy()
             row["poa_kwh_m2"] = poa * scale
             row["energy_kwh"] = row["energy_kwh"] * scale
@@ -436,7 +451,20 @@ def run(
             capped_rows.append(row)
         daily_with_pvgis = pd.DataFrame(capped_rows)
 
-        result = type(result)(daily=daily_with_pvgis, timeseries=result.timeseries)
+        # Apply the same scale to timeseries for arrays that were capped so debug/intervals stay consistent.
+        scaled_ts = {}
+        for key, df in result.timeseries.items():
+            scale = scale_map.get(key, 1.0)
+            if scale != 1.0 and df is not None:
+                df_scaled = df.copy()
+                for col in ("pdc_w", "pac_w", "pac_net_w", "poa_global"):
+                    if col in df_scaled.columns:
+                        df_scaled[col] = df_scaled[col] * scale
+                scaled_ts[key] = df_scaled
+            else:
+                scaled_ts[key] = df
+
+        result = type(result)(daily=daily_with_pvgis, timeseries=scaled_ts)
 
         for w in warnings:
             typer.echo(f"QC warning: {w}", err=True)
@@ -490,6 +518,9 @@ def run(
     typer.echo(daily.to_string(index=False))
     typer.echo(f"Wrote results to {output_path}")
     if debug:
+        # flush single-JSON collector if used
+        if isinstance(debug_collector, JsonDebugWriter):
+            debug_collector.finalize()
         typer.echo(f"Debug events -> {debug}")
 
 

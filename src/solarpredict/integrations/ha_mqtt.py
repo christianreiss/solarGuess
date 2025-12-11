@@ -48,8 +48,12 @@ def _parse_ts(value: str | None) -> Optional[dt.datetime]:
     return ts
 
 
-def _normalize_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Return hierarchical payload with meta + sites, handling legacy flat shape."""
+def _normalize_payload(data: Dict[str, Any] | list) -> Dict[str, Any]:
+    """Return hierarchical payload with meta + sites, handling flat lists or legacy shapes."""
+
+    # If caller provided a bare list (flat rows), treat it as legacy results.
+    if isinstance(data, list):
+        data = {"results": data}
 
     # Already hierarchical; make sure arrays carry `id` and totals exist.
     if "meta" in data and "sites" in data:
@@ -88,13 +92,24 @@ def _normalize_payload(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Legacy flat format with top-level results list.
     results = data.get("results", [])
+    # Infer date from first record if present.
+    inferred_date = results[0].get("date") if results else data.get("date")
     meta = {
         "generated_at": data.get("generated_at"),
-        "date": data.get("date"),
+        "date": inferred_date,
         "timestep": data.get("timestep"),
         "provider": data.get("provider"),
         "total_energy_kwh": data.get("total_energy_kwh"),
     }
+    # If generated_at missing (common for raw flat list), stamp now for freshness checks.
+    if not meta["generated_at"]:
+        meta["generated_at"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    # Fill date if absent from meta and top-level
+    if not meta.get("date"):
+        meta["date"] = inferred_date
+    # If still None, fallback to provided top-level date, then today (only for malformed input).
+    if meta.get("date") is None:
+        meta["date"] = data.get("date") or dt.date.today().isoformat()
     by_site: Dict[str, list] = {}
     for rec in results:
         site_id = rec.get("site", "unknown")

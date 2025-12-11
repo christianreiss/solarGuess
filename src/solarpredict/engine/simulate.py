@@ -57,6 +57,8 @@ def _clip_to_pvgis(daily_rows):
 class SimulationResult:
     daily: pd.DataFrame
     timeseries: Dict[Tuple[str, str], pd.DataFrame]
+    weather_raw: Dict[str, pd.DataFrame] | None = None
+    meta: Dict[str, any] | None = None
 
 
 def _now_like(index: pd.DatetimeIndex) -> pd.Timestamp:
@@ -241,6 +243,30 @@ def _infer_step_seconds(index: pd.DatetimeIndex, declared_timestep: str) -> floa
     return 0.0
 
 
+def _emit_df(debug: DebugCollector, stage: str, df: pd.DataFrame, *, ts, site=None, array=None) -> None:
+    """Emit entire dataframe as records for auditability."""
+    try:
+        payload = {
+            "rows": len(df),
+            "data": df.reset_index().rename(columns={"index": "ts"}).to_dict(orient="records"),
+        }
+        debug.emit(stage, payload, ts=ts, site=site, array=array)
+    except Exception as exc:  # pragma: no cover - best effort
+        debug.emit(f"{stage}.error", {"error": str(exc)}, ts=ts, site=site, array=array)
+
+
+def _emit_series(debug: DebugCollector, stage: str, series: pd.Series, *, ts, site=None, array=None) -> None:
+    """Emit series with index for full traceability."""
+    try:
+        payload = {
+            "rows": len(series),
+            "data": series.reset_index().rename(columns={"index": "ts", series.name or "value": "value"}).to_dict(orient="records"),
+        }
+        debug.emit(stage, payload, ts=ts, site=site, array=array)
+    except Exception as exc:  # pragma: no cover
+        debug.emit(f"{stage}.error", {"error": str(exc)}, ts=ts, site=site, array=array)
+
+
 def _apply_time_label(times: pd.DatetimeIndex, step_seconds: float, label: str) -> pd.DatetimeIndex:
     """Shift timestamps to the interval midpoint based on label semantics.
 
@@ -383,6 +409,18 @@ def simulate_day(
         site=None,
     )
     weather = weather_provider.get_forecast(locations, start=start, end=end, timestep=timestep)
+    # emit raw weather snapshot for audit (per site to keep site ids consistent)
+    for loc_id, df in weather.items():
+        try:
+            serial = df.reset_index().rename(columns={"index": "ts"})
+            debug.emit(
+                "weather.raw",
+                {"data": serial.to_dict(orient="records")},
+                ts=start,
+                site=loc_id,
+            )
+        except Exception as exc:  # pragma: no cover - best effort; don't fail pipeline
+            debug.emit("weather.raw_error", {"error": str(exc)}, ts=start, site=loc_id)
 
     daily_rows = []
     timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
@@ -447,6 +485,7 @@ def simulate_day(
         # Align back to original weather timestamps so downstream joins stay aligned.
         solar_pos.index = times
         site_debug.emit("stage.solarpos", {"rows": len(solar_pos)}, ts=times[0])
+        _emit_df(site_debug, "solar.position", solar_pos, ts=times[0], site=site.id)
 
         solar_noon_ts = solar_pos["elevation"].idxmax() if not solar_pos.empty else None
 
@@ -466,6 +505,7 @@ def simulate_day(
                 debug=arr_debug,
             )
             arr_debug.emit("stage.poa", {"rows": len(poa)}, ts=times[0])
+            _emit_df(arr_debug, "poa.detail", poa, ts=times[0], site=site.id, array=array.id)
 
             temps = cell_temperature(
                 poa_global=poa["poa_global"],
@@ -475,6 +515,7 @@ def simulate_day(
                 debug=arr_debug,
             )
             arr_debug.emit("stage.temp", {"rows": len(temps)}, ts=times[0])
+            _emit_series(arr_debug, "temp.detail", temps.rename("temp_cell_c"), ts=times[0], site=site.id, array=array.id)
 
             damping = _damping_factor(
                 times=times,
@@ -502,6 +543,7 @@ def simulate_day(
                 debug=arr_debug,
             )
             arr_debug.emit("stage.dc", {"rows": len(pdc)}, ts=times[0])
+            _emit_series(arr_debug, "dc.detail", pdc.rename("pdc_w"), ts=times[0], site=site.id, array=array.id)
 
             array_data[array.id] = {
                 "debug": arr_debug,
@@ -540,6 +582,7 @@ def simulate_day(
                 pdc0_inv = inverter_pdc0_from_dc_ac_ratio(pdc0_group, dc_ac_ratio, eta_inv_nom)
 
             pac_group = pvwatts_ac(pdc_sum, pdc0_inv_w=pdc0_inv, eta_inv_nom=eta_inv_nom, debug=site_debug)
+            _emit_series(site_debug, "ac.group", pac_group.rename(f"pac_group_{group_id}"), ts=times[0], site=site.id)
 
             # allocate by DC share per timestep; handle zeros
             pdc_sum_safe = pdc_sum.replace(0, pd.NA).infer_objects(copy=False)
@@ -567,6 +610,7 @@ def simulate_day(
             pac = data["pac"]
 
             arr_debug.emit("stage.ac", {"rows": len(pac)}, ts=times[0])
+            _emit_series(arr_debug, "ac.detail", pac.rename("pac_w"), ts=times[0], site=site.id, array=array.id)
 
             pac_net = apply_losses(pac, array.losses_percent, debug=arr_debug)
             interval_h = _interval_hours(pac_net.index, step_seconds=step_seconds, label=weather_label)
@@ -575,6 +619,8 @@ def simulate_day(
                 {"rows": len(pac_net), "interval_h_mean": float(interval_h.mean()) if len(interval_h) else None},
                 ts=times[0],
             )
+            _emit_series(arr_debug, "ac.net", pac_net.rename("pac_net_w"), ts=times[0], site=site.id, array=array.id)
+            _emit_series(arr_debug, "intervals", interval_h.rename("interval_h"), ts=times[0], site=site.id, array=array.id)
 
             energy_kwh = float(((pac_net / 1000.0) * interval_h).sum())
             peak_kw = float(pac_net.max() / 1000)
@@ -603,6 +649,7 @@ def simulate_day(
                     "interval_h": interval_h,
                 }
             )
+            _emit_df(arr_debug, "timeseries", ts_df, ts=times[0], site=site.id, array=array.id)
             timeseries[(site.id, array.id)] = ts_df
 
     # Clamp implausible daily POA/energy vs PVGIS climatology (guideline: 0.6x–1.6x).

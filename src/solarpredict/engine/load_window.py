@@ -154,7 +154,7 @@ def compute_load_windows(
             # align on union index to avoid misalignment; fill missing with 0 / ffill interval_h
             combined_idx = site_series[site_id].index.union(pac.index)
             site_series[site_id] = site_series[site_id].reindex(combined_idx).fillna(0) + pac.reindex(combined_idx).fillna(0)
-            site_interval[site_id] = site_interval[site_id].reindex(combined_idx).fillna(method="ffill").fillna(method="bfill")
+            site_interval[site_id] = site_interval[site_id].reindex(combined_idx).ffill().bfill()
 
     for site_id, series in site_series.items():
         interval_h = site_interval[site_id]

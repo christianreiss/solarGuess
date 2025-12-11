@@ -90,7 +90,7 @@ def test_run_command_smoke(monkeypatch, tmp_path):
             "--config",
             str(cfg),
             "--date",
-            "2025-06-01",
+            "2025-12-01",
             "--timestep",
             "1h",
             "--debug",
@@ -117,7 +117,7 @@ def test_run_skips_when_existing_generated_today(monkeypatch, tmp_path):
     # existing output with today's generated_at
     # use local date to match guard logic that compares to dt.date.today()
     today_iso = dt.datetime.combine(dt.date.today(), dt.datetime.now().time(), dt.timezone.utc).isoformat()
-    out_json.write_text(json.dumps({"meta": {"generated_at": today_iso, "date": "2025-06-01"}, "sites": []}))
+    out_json.write_text(json.dumps({"meta": {"generated_at": today_iso, "date": "2025-12-01"}, "sites": []}))
 
     called = {"simulate": False}
 
@@ -138,7 +138,7 @@ def test_run_skips_when_existing_generated_today(monkeypatch, tmp_path):
             "--config",
             str(cfg),
             "--date",
-            "2025-06-01",
+            "2025-12-01",
             "--format",
             "json",
             "--output",
@@ -177,7 +177,7 @@ def test_run_force_bypasses_skip(monkeypatch, tmp_path):
             "--config",
             str(cfg),
             "--date",
-            "2025-06-01",
+            "2025-12-01",
             "--format",
             "json",
             "--output",
@@ -270,7 +270,7 @@ def test_run_uses_config_timestep_default(monkeypatch, tmp_path):
             "--config",
             str(cfg),
             "--date",
-            "2025-06-01",
+            "2025-12-01",
             "--format",
             "json",
             "--output",

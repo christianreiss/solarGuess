@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 
@@ -34,6 +36,16 @@ def test_open_meteo_retries(monkeypatch):
     res = provider.get_forecast([{"id": "1", "lat": 0, "lon": 0}], "2025-01-01", "2025-01-02")
     assert calls["count"] == 2
     assert "1" in res
+
+
+def test_open_meteo_date_validation():
+    provider = OpenMeteoWeatherProvider()
+    # invalid format
+    with pytest.raises(ValueError, match="ISO dates"):
+        provider.get_forecast([{"id": "1", "lat": 0, "lon": 0}], "2025-13-40", "2025-01-02")
+    # end before start
+    with pytest.raises(ValueError, match="on/after"):
+        provider.get_forecast([{"id": "1", "lat": 0, "lon": 0}], "2025-01-02", "2025-01-01")
 
 
 def test_pvgis_retries(monkeypatch, tmp_path):

@@ -63,6 +63,12 @@ def _ensure_run_defaults(run: dict) -> dict:
         base["actual_as_of"] = None
     if "weather_mode" not in base:
         base["weather_mode"] = None
+    if "base_load_w" not in base:
+        base["base_load_w"] = None
+    if "min_duration_min" not in base:
+        base["min_duration_min"] = None
+    if "required_wh" not in base:
+        base["required_wh"] = None
     return base
 
 
