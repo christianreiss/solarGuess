@@ -2,28 +2,30 @@
 
 Format: `X.Y.Z` where **X** is one self-contained module (doable in a single task), **Y** the required sub-feature, **Z** the detail to implement/test.
 
-1. Horizon Masking
-1.1. Config & parsing  
-1.1.1. Accept per-array `horizon_deg` list (CSV/string or list) with validation (≥12 values, 0–90°).  
-1.1.2. Add docs and CLI schema wiring; emit parse errors via `ConfigError`.
-1.2. Geometry application  
-1.2.1. Compute azimuth-binned horizon; interpolate to sun azimuth each timestep.  
-1.2.2. Zero direct-beam component in POA when solar elevation < horizon; keep diffuse/ground intact.  
-1.2.3. Debug events: count masked samples, example max blocked DNI.
-1.3. Tests  
-1.3.1. Unit test horizon interp/masking with synthetic sun path.  
-1.3.2. Engine integration test: horizon cuts morning/evening energy; debug includes mask stats.
+## Checklist
 
-2. Damping (morning/evening attenuation)
-2.1. Config  
-2.1.1. Per-array `damping_morning`/`damping_evening` (0–1) with optional single `damping` tuple. **DONE**  
-2.1.2. Validation + docs; defaults to 1.0 (no effect). **DONE (validation/defaults)**  
-2.2. Application  
-2.2.1. Apply smooth (e.g., cosine taper) attenuation around civil sunrise/sunset or configurable window. **DONE (1.5h cosine taper)**  
-2.2.2. Hook into engine after POA or at pac_net; ensure multiplicative and deterministic. **DONE (applied to POA before DC)**  
-2.2.3. Debug: emit attenuation window and min/max applied factor. **DONE**  
-2.3. Tests  
-2.3.1. Deterministic unit test on synthetic day: verify AM/PM watts reduced by expected factor; midday untouched. **DONE**
+- [x] 1. Horizon Masking  
+  - [x] 1.1. Config & parsing  
+    - [x] 1.1.1. Accept per-array `horizon_deg` list (CSV/string or list) with validation (≥12 values, 0–90°).  
+    - [x] 1.1.2. Add docs and CLI schema wiring; emit parse errors via `ConfigError`.  
+  - [x] 1.2. Geometry application  
+    - [x] 1.2.1. Compute azimuth-binned horizon; interpolate to sun azimuth each timestep.  
+    - [x] 1.2.2. Zero direct-beam component in POA when solar elevation < horizon; keep diffuse/ground intact.  
+    - [x] 1.2.3. Debug events: count masked samples, example max blocked DNI.  
+  - [x] 1.3. Tests  
+    - [x] 1.3.1. Unit test horizon interp/masking with synthetic sun path.  
+    - [x] 1.3.2. Engine integration test: horizon cuts morning/evening energy; debug includes mask stats.  
+
+- [x] 2. Damping (morning/evening attenuation)  
+  - [x] 2.1. Config  
+    - [x] 2.1.1. Per-array `damping_morning`/`damping_evening` (0–1) with optional single `damping` tuple.  
+    - [x] 2.1.2. Validation + docs; defaults to 1.0 (no effect).  
+  - [x] 2.2. Application  
+    - [x] 2.2.1. Apply smooth (e.g., cosine taper) attenuation around civil sunrise/sunset or configurable window.  
+    - [x] 2.2.2. Hook into engine after POA or at pac_net; ensure multiplicative and deterministic.  
+    - [x] 2.2.3. Debug: emit attenuation window and min/max applied factor.  
+  - [x] 2.3. Tests  
+    - [x] 2.3.1. Deterministic unit test on synthetic day: verify AM/PM watts reduced by expected factor; midday untouched.  
 
 3. Interval Export
 3.1. CLI/format  
