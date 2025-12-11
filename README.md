@@ -103,7 +103,7 @@ pip install -e .
 
     ```bash
     PYTHONPATH=src \
-    python -m solarpredict.cli run \
+    solarguess run \
       --config etc/config.yaml \
       --date 2025-06-01 \
       --weather-label end \
@@ -119,13 +119,7 @@ pip install -e .
 
 ### Interactive config editor (TUI)
 
-Build or edit scenario files with a keyboard-driven TUI:
-
-```bash
-solarpredict config etc/config.yaml
-```
-
-Keys: `↑/↓` move selection, `e` edit, `a` add site, `d` delete, `Ctrl+S` save, `Ctrl+C` quit. Pass `--no-tui` to fall back to the legacy prompt flow (handy for scripting/tests). Debug JSONL for TUI actions can be written with `--debug path/to/debug.jsonl`.
+Temporarily disabled while we redo the config UX. Run `solarguess --help` for current commands.
 
 ---
 
@@ -301,7 +295,7 @@ Rules of thumb:
 | `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--weather-mode {standard,cloud-scaled}`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
 | `config` | Interactive YAML/JSON scenario builder/editor. Guides you through locations and arrays with validation using the same models as the engine. |
 
-All CLI code lives in `src/solarpredict/cli.py` (Typer-based). Weather provider defaults to Open-Meteo but the CLI factory (`default_weather_provider`) makes dependency injection easy for tests.
+All CLI code lives in `src/solarpredict/cli.py` (Typer-based). Weather provider defaults to Open-Meteo but the CLI factory (`default_weather_provider`) makes dependency injection easy for tests. Install exposes `solarguess` (preferred) and `solarpredict` console scripts.
 
 ---
 
@@ -353,14 +347,14 @@ After a daily run (write `live_results.json` with your scheduler), publish to Ho
 
 ```bash
 # simulate + publish (topics only by default)
-PYTHONPATH=src python -m solarpredict.cli run \
+PYTHONPATH=src solarguess run \
   --config etc/config.yaml \
   --date 2025-12-10 \
   --timestep 15m \
   --format json \
   --output live_results.json
 
-PYTHONPATH=src python -m solarpredict.cli publish-mqtt \
+PYTHONPATH=src solarguess publish-mqtt \
   --config etc/config.yaml \
   --verify --publish-retries 3 --retry-delay 2 --skip-if-fresh
 ```
@@ -374,7 +368,7 @@ PYTHONPATH=src python -m solarpredict.cli publish-mqtt \
   ```bash
   mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/forecast
   mosquitto_pub -h <broker> -p 1883 -u <user> -P '<pass>' -r -n -t solarguess/availability
-  PYTHONPATH=src python -m solarpredict.cli publish-mqtt --config etc/config.yaml --verbose --force
+  PYTHONPATH=src solarguess publish-mqtt --config etc/config.yaml --verbose --force
   ```
 
 Health/verification:

@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 
 from solarpredict import cli
 from solarpredict import cli_utils
-from solarpredict import cli_utils
 from solarpredict.core.models import Location, PVArray, Scenario, Site
 from solarpredict.core.config import load_scenario
 
@@ -57,7 +56,9 @@ def test_help_exits_zero():
     res = runner.invoke(cli.app, ["--help"])
     assert res.exit_code == 0
     assert "run" in res.stdout
+    # config command remains listed but is disabled; ensure help mentions removal notice.
     assert "config" in res.stdout
+    assert "disabled" in res.stdout or "removed" in res.stdout
 
 
 class DummyWeatherProvider:
@@ -103,9 +104,9 @@ def test_run_command_smoke(monkeypatch, tmp_path):
     )
     assert res.exit_code == 0, res.stdout
     data = json.loads(out_json.read_text())
-    # load_windows absent when base_load not provided; payload is list
-    assert isinstance(data, list)
-    assert data[0]["site"] == "site1"
+    assert isinstance(data, dict)
+    assert data["meta"]["date"] == "2025-12-01"
+    assert data["sites"][0]["id"] == "site1"
     assert debug_path.exists()
     assert debug_path.read_text().strip() != ""
 
@@ -187,44 +188,6 @@ def test_run_force_bypasses_skip(monkeypatch, tmp_path):
     )
     assert res.exit_code == 0, res.stdout
     assert called["simulate"] is True
-
-
-def test_config_command_add_edit_delete(tmp_path):
-    path = tmp_path / "config.yaml"
-
-    input_lines = [
-        "a",  # add site
-        "site1",
-        "0",
-        "0",
-        "UTC",
-        "",
-        "loc1",
-        "array1",
-        "20",
-        "0",
-        "5000",
-        "-0.004",
-        "1.2",
-        "0.96",
-        "5",
-        "close_mount_glass_glass",
-        "",  # inverter group id blank
-        "",  # inverter pdc0_w blank
-        "",  # horizon blank
-        "n",  # Add array? prompt default False
-        "n",  # Edit existing array?
-        "n",  # Delete array?
-        "n",  # Modify arrays again?
-        "s",  # save\n
-    ]
-
-    res = runner.invoke(cli.app, ["config", "--no-tui", str(path)], input="\n".join(input_lines))
-    assert res.exit_code == 0, res.stdout
-
-    scenario = load_scenario(path)
-    assert len(scenario.sites) == 1
-    assert scenario.sites[0].arrays[0].id == "array1"
 
 
 def test_scenario_to_dict_preserves_inverter_fields():

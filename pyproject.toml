@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 solarpredict = "solarpredict.cli:main"
+solarguess = "solarpredict.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

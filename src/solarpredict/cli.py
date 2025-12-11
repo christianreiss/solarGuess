@@ -3,7 +3,7 @@
 Implements two primary commands:
 
 * ``run``: execute a daily simulation from a scenario config file.
-* ``config``: interactive helper to build/edit scenario configs.
+* ``config``: interactive helper to build/edit scenario configs. (disabled)
 
 The CLI is intentionally lightweight and depends only on Typer (Click).
 """
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -28,9 +27,6 @@ from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
 from solarpredict.integrations import ha_mqtt
-from solarpredict.cli_config_tui import launch_config_tui
-from solarpredict.cli_utils import write_scenario, load_existing, load_mqtt, load_run
-from solarpredict.cli_config_tui import launch_config_tui
 
 __version__ = "0.1.0"
 
@@ -49,10 +45,7 @@ def _exit_with_error(msg: str) -> None:
 
 
 def _write_scenario(path: Path, scenario: Scenario) -> None:
-    try:
-        write_scenario(path, scenario)
-    except ConfigError as exc:
-        _exit_with_error(str(exc))
+    _exit_with_error("Scenario writer removed with CLI config. Re-add if needed.")
 
 
 def _prompt_location(existing: Location | None = None) -> Location:
@@ -194,6 +187,10 @@ def run(
     iam_coefficient: Optional[float] = typer.Option(
         None,
         help="Coefficient for IAM model (e.g., ASHRAE b0).",
+    ),
+    output_shape: str = typer.Option(
+        "hierarchical",
+        help="JSON output shape when --format=json: 'hierarchical' (meta+sites, default) or 'records' (flat list).",
     ),
     pvgis_cache_dir: Optional[Path] = typer.Option(
         None,
@@ -499,9 +496,42 @@ def run(
         for col in serializable.columns:
             if str(serializable[col].dtype).startswith("datetime64"):
                 serializable[col] = serializable[col].astype(str)
-        payload = serializable.to_dict(orient="records")
-        if load_windows is not None:
-            payload = {"results": payload, "load_windows": load_windows}
+
+        records_payload = serializable.to_dict(orient="records")
+
+        if output_shape.lower() == "records":
+            payload = records_payload if load_windows is None else {"results": records_payload, "load_windows": load_windows}
+        elif output_shape.lower() == "hierarchical":
+            # Build hierarchical shape with meta/sites to avoid shell-script postprocessing.
+            sites: Dict[str, Dict[str, Any]] = {}
+            for rec in records_payload:
+                site_id = rec.get("site") or "unknown"
+                arr_id = rec.get("array") or "array"
+                site = sites.setdefault(site_id, {"id": site_id, "arrays": []})
+                site["arrays"].append(rec)
+            sites_list: List[Dict[str, Any]] = []
+            for site_id, site in sites.items():
+                arrays_sorted = sorted(site["arrays"], key=lambda a: a.get("array") or a.get("id") or "")
+                total_energy = round(sum(float(a.get("energy_kwh", 0) or 0) for a in arrays_sorted), 3)
+                site_entry = {"id": site_id, "arrays": arrays_sorted, "total_energy_kwh": total_energy}
+                sites_list.append(site_entry)
+            sites_list = sorted(sites_list, key=lambda s: s.get("id") or "")
+
+            meta = {
+                "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                "date": date,
+                "timestep": effective_timestep,
+                "provider": weather_source,
+                "total_energy_kwh": round(sum(s["total_energy_kwh"] for s in sites_list), 3) if sites_list else 0,
+                "site_count": len(sites_list),
+                "array_count": sum(len(s["arrays"]) for s in sites_list),
+            }
+            payload: Dict[str, Any] = {"meta": meta, "sites": sites_list}
+            if load_windows is not None:
+                payload["load_windows"] = load_windows
+        else:
+            _exit_with_error("output-shape must be 'hierarchical' or 'records'")
+
         output_path.write_text(json.dumps(payload, indent=2))
     elif fmt == "csv":
         daily.to_csv(output_path, index=False)
@@ -577,70 +607,11 @@ def _build_intervals_df(timeseries: Dict[Tuple[str, str], pd.DataFrame]) -> pd.D
 
 @app.command()
 def config(
-    path: Path = typer.Argument(..., help="Path to save scenario YAML/JSON"),
-    no_tui: bool = typer.Option(False, help="Use legacy prompt mode instead of TUI"),
-    debug: Optional[Path] = typer.Option(None, help="Write TUI debug JSONL"),
+    *args,
+    **kwargs,
 ):
-    """Interactive scenario builder/editor.
-
-    Default mode launches a prompt_toolkit TUI. Pass --no-tui to use the legacy
-    prompt-driven flow (useful for non-interactive scripts/tests).
-    """
-
-    if not no_tui:
-        launch_config_tui(path, debug_path=debug)
-        return
-
-    sites = _load_existing(path)
-
-    while True:
-        action = typer.prompt(
-            "Choose action [a=add site, e=edit site, d=delete site, l=list, s=save]",
-            default="s" if sites else "a",
-        ).strip().lower()
-
-        if action == "a":
-            sites.append(_prompt_site())
-            continue
-
-        if action == "e":
-            if not sites:
-                typer.echo("No sites to edit")
-                continue
-            _list_sites(sites)
-            target = typer.prompt("Site id to edit", default=sites[0].id)
-            for idx, site in enumerate(sites):
-                if site.id == target:
-                    sites[idx] = _prompt_site(site)
-                    break
-            else:
-                typer.echo(f"Site {target} not found")
-            continue
-
-        if action == "d":
-            if not sites:
-                typer.echo("No sites to delete")
-                continue
-            _list_sites(sites)
-            target = typer.prompt("Site id to delete", default=sites[0].id)
-            sites = [s for s in sites if s.id != target]
-            continue
-
-        if action == "l":
-            _list_sites(sites)
-            continue
-
-        if action == "s":
-            try:
-                scenario = Scenario(sites=sites)
-            except ValidationError as exc:
-                typer.echo(f"Invalid scenario: {exc}")
-                continue
-            _write_scenario(path, scenario)
-            typer.echo(f"Saved scenario to {path}")
-            return
-
-        typer.echo("Unknown action; choose a/e/d/l/s")
+    """Config CLI removed. This command now exits with an error."""
+    _exit_with_error("config command disabled; CLI config flow removed.")
 
 
 @app.callback()

@@ -46,11 +46,11 @@ print("live_results.json")
 PY
 )
 
-PYTHONPATH=src $PY_BIN -m solarpredict.cli run \
+PYTHONPATH=src $PY_BIN -m solarguess run \
   --config etc/config.yaml \
   --date "$DATE" \
   --output "$OUT"
 
-PYTHONPATH=src $PY_BIN -m solarpredict.cli publish-mqtt \
+PYTHONPATH=src $PY_BIN -m solarguess publish-mqtt \
   --config etc/config.yaml \
   --input "$OUT"
