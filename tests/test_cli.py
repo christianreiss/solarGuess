@@ -47,6 +47,8 @@ def _write_fixture_with_run(tmp_path: Path, timestep: str = "15m") -> Path:
         + f"  timestep: {timestep}\n"
         + "  actual_kwh_today: 1.5\n"
         + "  actual_limit_suppress: false\n"
+        + "  base_load_w: 500\n"
+        + "  min_duration_min: 30\n"
     )
     return cfg
 
@@ -101,6 +103,8 @@ def test_run_command_smoke(monkeypatch, tmp_path):
     )
     assert res.exit_code == 0, res.stdout
     data = json.loads(out_json.read_text())
+    # load_windows absent when base_load not provided; payload is list
+    assert isinstance(data, list)
     assert data[0]["site"] == "site1"
     assert debug_path.exists()
     assert debug_path.read_text().strip() != ""
@@ -253,7 +257,8 @@ def test_run_uses_config_timestep_default(monkeypatch, tmp_path):
     def fake_simulate_day(scenario, date, timestep, weather_provider, debug, weather_label):
         captured["timestep"] = timestep
         df = pd.DataFrame([{"site": "site1", "array": "arr1", "energy_kwh": 1.0}])
-        return type("Result", (), {"daily": df, "timeseries": {}})()
+        ts = {( "site1", "arr1"): pd.DataFrame({"pac_net_w": pd.Series([100], index=pd.date_range(date, periods=1, freq="1h", tz="UTC")), "interval_h": pd.Series([1.0], index=pd.date_range(date, periods=1, freq="1h", tz="UTC"))})}
+        return type("Result", (), {"daily": df, "timeseries": ts})()
 
     monkeypatch.setattr(cli, "default_weather_provider", lambda debug: DummyWeatherProvider())
     monkeypatch.setattr(cli, "simulate_day", fake_simulate_day)

@@ -45,6 +45,9 @@ _OPTIONAL_RUN_KEYS = {
     "output",
     "debug",
     "qc_pvgis",
+    "base_load_w",
+    "min_duration_min",
+    "required_wh",
 }
 
 

@@ -203,6 +203,18 @@ def run(
         None,
         help="Timestamp (ISO) representing 'now' for actual scaling; defaults to current time clamped to simulation window.",
     ),
+    base_load_w: Optional[float] = typer.Option(
+        None,
+        help="Base load (W) to detect windows where pac_net_w exceeds this threshold (per site, summed across arrays).",
+    ),
+    min_duration_min: Optional[float] = typer.Option(
+        None,
+        help="Minimum window duration in minutes for load window detection. Required when base_load_w is set.",
+    ),
+    required_wh: Optional[float] = typer.Option(
+        None,
+        help="Optional energy requirement (Wh) a window must satisfy to qualify.",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -275,6 +287,38 @@ def run(
         or run_section.get("timestep")
         or "1h"
     )
+
+    # Optional load-window inputs (per-site aggregation of pac_net_w)
+    cfg_base_load = run_section.get("base_load_w")
+    cfg_min_duration = run_section.get("min_duration_min")
+    cfg_required_wh = run_section.get("required_wh")
+
+    effective_base_load = base_load_w if base_load_w is not None else cfg_base_load
+    effective_min_duration = min_duration_min if min_duration_min is not None else cfg_min_duration
+    effective_required_wh = required_wh if required_wh is not None else cfg_required_wh
+
+    if effective_base_load is not None:
+        try:
+            effective_base_load = float(effective_base_load)
+        except Exception:
+            _exit_with_error("base_load_w must be numeric")
+        if effective_base_load <= 0:
+            _exit_with_error("base_load_w must be positive")
+        if effective_min_duration is None:
+            _exit_with_error("min_duration_min is required when base_load_w is provided")
+        try:
+            effective_min_duration = float(effective_min_duration)
+        except Exception:
+            _exit_with_error("min_duration_min must be numeric")
+        if effective_min_duration <= 0:
+            _exit_with_error("min_duration_min must be positive")
+        if effective_required_wh is not None:
+            try:
+                effective_required_wh = float(effective_required_wh)
+            except Exception:
+                _exit_with_error("required_wh must be numeric")
+            if effective_required_wh <= 0:
+                _exit_with_error("required_wh must be positive when provided")
 
     result = simulate_day(
         scenario,
@@ -388,13 +432,28 @@ def run(
 
     daily = result.daily
 
+    load_windows = None
+    if effective_base_load is not None:
+        from solarpredict.engine.load_window import compute_load_windows
+
+        load_windows = compute_load_windows(
+            result.timeseries,
+            base_load_w=effective_base_load,
+            min_duration_min=effective_min_duration,
+            required_wh=effective_required_wh,
+            debug=debug_collector,
+        )
+
     fmt = format.lower()
     if fmt == "json":
         serializable = daily.copy()
         for col in serializable.columns:
             if str(serializable[col].dtype).startswith("datetime64"):
                 serializable[col] = serializable[col].astype(str)
-        output_path.write_text(serializable.to_json(orient="records", indent=2))
+        payload = serializable.to_dict(orient="records")
+        if load_windows is not None:
+            payload = {"results": payload, "load_windows": load_windows}
+        output_path.write_text(json.dumps(payload, indent=2))
     elif fmt == "csv":
         daily.to_csv(output_path, index=False)
     else:
