@@ -15,6 +15,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Callable, List, Optional
 
+import pandas as pd
 import typer
 import yaml
 
@@ -305,6 +306,29 @@ def run(
         daily_with_pvgis["pvgis_poa_kwh_m2"] = daily_with_pvgis.apply(
             lambda row: pvgis_poa_map.get((row["site"], row["array"])), axis=1
         )
+        # Clamp implausible POA/energy vs PVGIS (0.6x–1.6x) now that the baseline is attached.
+        capped_rows = []
+        for _, row in daily_with_pvgis.iterrows():
+            pvgis = row.get("pvgis_poa_kwh_m2")
+            poa = row.get("poa_kwh_m2")
+            if pvgis is None or poa is None or pd.isna(pvgis) or pd.isna(poa) or pvgis <= 0:
+                capped_rows.append(row)
+                continue
+            ratio = poa / pvgis
+            if 0.6 <= ratio <= 1.6:
+                capped_rows.append(row)
+                continue
+            cap = 1.6 if ratio > 1.6 else 0.6
+            scale = cap / ratio if ratio != 0 else 1.0
+            row = row.copy()
+            row["poa_kwh_m2"] = poa * scale
+            row["energy_kwh"] = row["energy_kwh"] * scale
+            row["peak_kw"] = row["peak_kw"] * scale
+            row["qc_clipped"] = True
+            row["qc_ratio"] = ratio
+            capped_rows.append(row)
+        daily_with_pvgis = pd.DataFrame(capped_rows)
+
         result = type(result)(daily=daily_with_pvgis, timeseries=result.timeseries)
 
         for w in warnings:

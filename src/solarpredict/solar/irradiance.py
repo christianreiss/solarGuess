@@ -30,6 +30,12 @@ def poa_irradiance(
 
     debug = debug or NullDebugCollector()
 
+    # Normalize azimuth to pvlib convention [0,360), 0=N, 180=S, positive clockwise.
+    surface_azimuth = float(surface_azimuth)
+    while surface_azimuth < 0:
+        surface_azimuth += 360
+    surface_azimuth %= 360
+
     # Guardrail: pvlib will error on perez without dni_extra, and negative inputs can
     # yield small positive POA; sanitize up front for determinism.
     dni = dni.clip(lower=0)
