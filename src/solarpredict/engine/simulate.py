@@ -15,6 +15,7 @@ from solarpredict.solar.irradiance import poa_irradiance
 from solarpredict.solar.position import solar_position
 from solarpredict.solar.temperature import cell_temperature
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
+from solarpredict.weather.cloud_scaled import CloudScaledWeatherProvider
 
 
 def _clip_to_pvgis(daily_rows):
@@ -358,11 +359,20 @@ def simulate_day(
     weather_provider=None,
     debug: DebugCollector | None = None,
     weather_label: str = "end",
+    weather_mode: str | None = None,
 ) -> SimulationResult:
     """Run full-day simulation for all sites/arrays in scenario."""
 
     debug = debug or NullDebugCollector()
-    weather_provider = weather_provider or OpenMeteoWeatherProvider(debug=debug)
+    # Allow explicit weather provider override, otherwise pick based on weather_mode
+    if weather_provider is None:
+        if (weather_mode or "").lower() == "cloud-scaled":
+            weather_provider = CloudScaledWeatherProvider(debug=debug)
+        else:
+            weather_provider = OpenMeteoWeatherProvider(debug=debug)
+
+    if (weather_mode or "standard").lower() not in {"standard", "cloud-scaled"}:
+        raise ValueError("weather_mode must be 'standard' or 'cloud-scaled'")
 
     start, end = _daterange_bounds(date)
     locations = [{"id": site.id, "lat": site.location.lat, "lon": site.location.lon} for site in scenario.sites]

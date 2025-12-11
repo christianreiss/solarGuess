@@ -48,6 +48,7 @@ _OPTIONAL_RUN_KEYS = {
     "base_load_w",
     "min_duration_min",
     "required_wh",
+    "weather_mode",
 }
 
 

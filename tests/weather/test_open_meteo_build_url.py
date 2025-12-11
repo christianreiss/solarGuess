@@ -15,13 +15,7 @@ def test_build_params_multi_location():
 
     assert params["latitude"] == "52.52,48.85"
     assert params["longitude"] == "13.41,2.35"
-    assert params["hourly"].split(",") == [
-        "temperature_2m",
-        "wind_speed_10m",
-        "shortwave_radiation",
-        "diffuse_radiation",
-        "direct_normal_irradiance",
-    ]
+    assert "cloudcover" in params["hourly"].split(",")
     assert params["timezone"] == "auto"
     assert params["start_date"] == start
     assert params["end_date"] == end

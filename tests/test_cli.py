@@ -254,7 +254,7 @@ def test_run_uses_config_timestep_default(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_simulate_day(scenario, date, timestep, weather_provider, debug, weather_label):
+    def fake_simulate_day(scenario, date, timestep, weather_provider, debug, weather_label, weather_mode):
         captured["timestep"] = timestep
         df = pd.DataFrame([{"site": "site1", "array": "arr1", "energy_kwh": 1.0}])
         ts = {( "site1", "arr1"): pd.DataFrame({"pac_net_w": pd.Series([100], index=pd.date_range(date, periods=1, freq="1h", tz="UTC")), "interval_h": pd.Series([1.0], index=pd.date_range(date, periods=1, freq="1h", tz="UTC"))})}

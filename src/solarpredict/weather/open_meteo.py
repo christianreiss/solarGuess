@@ -17,6 +17,7 @@ _VAR_MAP = {
     "shortwave_radiation": "ghi_wm2",
     "diffuse_radiation": "dhi_wm2",
     "direct_normal_irradiance": "dni_wm2",
+    "cloudcover": "cloudcover",
 }
 
 
@@ -42,7 +43,8 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             lons.append(str(loc["lon"]))
             ids.append(str(loc["id"]))
 
-        hourly_vars = ",".join(_VAR_MAP.keys())
+        hourly_vars = ",".join(k for k in _VAR_MAP.keys() if k != "cloudcover")
+        cloud_param = "cloudcover"
         params = {
             "latitude": ",".join(lats),
             "longitude": ",".join(lons),
@@ -51,9 +53,9 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             "end_date": end,
         }
         if timestep == "15m":
-            params["minutely_15"] = hourly_vars
+            params["minutely_15"] = ",".join([hourly_vars, cloud_param])
         else:
-            params["hourly"] = hourly_vars
+            params["hourly"] = ",".join([hourly_vars, cloud_param])
         # Request wind in m/s to match downstream expectations (temp model assumes m/s).
         params["wind_speed_unit"] = "ms"
         # echo ids back to parse by position; Open-Meteo doesn't support this yet but we keep for traceability
@@ -69,7 +71,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         }
         ts = df.index[0] if not df.empty else None
         self.debug.emit("weather.summary", payload, ts=ts, site=loc_id)
-
+    
     def _parse_single(self, payload: Dict[str, any]) -> pd.DataFrame:
         time_block = payload.get("hourly") or payload.get("minutely_15")
         if time_block is None:
@@ -94,6 +96,8 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         data: Dict[str, List] = {}
         for api_key, col in _VAR_MAP.items():
             series = time_block.get(api_key, [])
+            if not series:
+                series = [None] * len(index)
             if api_key == "wind_speed_10m":
                 # API may return km/h if caller didn't request m/s; convert just in case.
                 units = payload.get("hourly_units", {}).get("wind_speed_10m")

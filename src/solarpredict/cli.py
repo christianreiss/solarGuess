@@ -183,6 +183,10 @@ def run(
         "open-meteo",
         help="Weather provider: 'open-meteo' (default), 'pvgis-tmy' (typical meteorological year), or 'composite' (open-meteo primary with PVGIS fallback).",
     ),
+    weather_mode: str = typer.Option(
+        "standard",
+        help="Weather processing mode: 'standard' (use provider irradiance) or 'cloud-scaled' (clear-sky scaled by cloud cover).",
+    ),
     pvgis_cache_dir: Optional[Path] = typer.Option(
         None,
         help="Directory to cache PVGIS TMY responses (keyed by lat/lon). Only used when --weather-source=pvgis-tmy.",
@@ -269,6 +273,7 @@ def run(
                 raise typer.Exit(code=0)
 
     weather_source = weather_source.lower()
+    weather_mode = weather_mode.lower()
     if weather_source == "open-meteo":
         provider = default_weather_provider(debug=debug_collector)
     elif weather_source == "pvgis-tmy":
@@ -279,6 +284,9 @@ def run(
         provider = CompositeWeatherProvider(primary=primary, secondary=secondary, debug=debug_collector)
     else:
         _exit_with_error(f"Unsupported weather_source '{weather_source}'")
+
+    if weather_mode not in {"standard", "cloud-scaled"}:
+        _exit_with_error("weather_mode must be 'standard' or 'cloud-scaled'")
 
     run_section = raw_cfg.get("run", {}) if raw_cfg else {}
 
@@ -327,6 +335,7 @@ def run(
         weather_provider=provider,
         debug=debug_collector,
         weather_label=weather_label,
+        weather_mode=weather_mode,
     )
 
     # Optional actual adjustment

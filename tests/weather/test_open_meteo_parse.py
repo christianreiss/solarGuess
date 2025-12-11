@@ -18,9 +18,9 @@ def test_parse_fixture_tz_and_columns():
     # Ensure we didn't mistakenly shift local timestamps by converting from UTC
     first = results.index[0]
     assert first.hour == 0 and first.day == 9 and first.month == 12 and first.year == 2025
-    expected_cols = {"temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2"}
+    expected_cols = {"temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2", "cloudcover"}
     assert expected_cols.issubset(results.columns)
-    assert results.notna().all().all()
+    assert results[["temp_air_c", "wind_ms", "ghi_wm2", "dhi_wm2", "dni_wm2"]].notna().all().all()
 
 
 def test_parse_converts_wind_kmh_to_ms_when_needed():
