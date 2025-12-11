@@ -12,12 +12,13 @@ Predict day-scale solar production with auditable, structured debug output. sola
 4. [Your first run (tutorial)](#your-first-run-tutorial)
 5. [Configuration guide](#configuration-guide)
 6. [Calculation pipeline (deep dive)](#calculation-pipeline-deep-dive)
-7. [Debugging & audits](#debugging--audits)
-8. [CLI reference](#cli-reference)
-9. [Project layout](#project-layout)
-10. [Testing](#testing)
-11. [Home Assistant / MQTT integration](#home-assistant--mqtt-integration)
-12. [Roadmap ideas](#roadmap-ideas)
+7. [New modeling features](#new-modeling-features)
+8. [Debugging & audits](#debugging--audits)
+9. [CLI reference](#cli-reference)
+10. [Project layout](#project-layout)
+11. [Testing](#testing)
+12. [Home Assistant / MQTT integration](#home-assistant--mqtt-integration)
+13. [Roadmap ideas](#roadmap-ideas)
 
 ---
 
@@ -36,19 +37,27 @@ Utilities publish yesterday's production; asset owners need tomorrow's. solarGue
 > Think "weather forecast ➜ irradiance ➜ panel temperature ➜ DC ➜ AC ➜ energy".
 
 ```
-Forecast (GHI/DNI/DHI, Tair, wind) — Open-Meteo (live) / PVGIS TMY (baseline)
+Forecast inputs (Open-Meteo live + cloud cover, PVGIS TMY baseline/cache)
         │
-    Step detection ──┐
-        │            ▼
-  Solar geometry  (pvlib)
+        ├──► Composite / cloud-scaled merge (optional)
+        │
+    Step detection + time-label alignment
+        │
+  Solar geometry (pvlib)
+        │
+        ├──► Plane-of-array irradiance (Perez + horizon mask + IAM)
         │            │
-        ├──► Plane-of-array irradiance (Perez)
-        │            │
-        ├──► Cell temperature (SAPM)
-        │            │
-        ├──► DC power (PVWatts)
-        │            │
-        └──► AC power + losses → energy per array/site
+        ├──► Morning/evening damping          │
+        │            │                        │
+        ├──► Cell temperature (SAPM)          │
+        │            │                        │
+        ├──► DC power (PVWatts)               │
+        │            │                        │
+        ├──► Inverter grouping + clipping     │
+        │            │                        │
+        ├──► Losses → AC net                  │
+        │            │                        │
+        └──► Aggregation → QC (PVGIS clamp) → load windows / actual scaling
 ```
 
 ---
@@ -199,20 +208,75 @@ Rules of thumb:
 - PVWatts DC using array-specific `pdc0_w`, `gamma_pdc`. Produces name-aligned `pdc_w` series.
 - Debug payload shows min/max DC to catch wrong irradiance or shading assumptions.
 
-### 8. Inverters & clipping (`engine.simulate` + `pv.power.pvwatts_ac`)
+### 8. Damping & horizon masking (`engine.simulate._damping_factor`, `solar.irradiance.poa_irradiance`)
+
+- Optional `damping` (single value) or `damping_morning` / `damping_evening` attenuate POA near sunrise/sunset with a cosine window (~1.5 h). Perfect for east-west row shading or mandated curtailment.
+- `horizon_deg` (≥12 azimuth bins) blanks the direct beam when local terrain/structures exceed the sun elevation. Diffuse + ground components remain so twilight production stays realistic.
+
+### 9. IAM (incidence angle modifiers, `solar.incidence.apply_iam`)
+
+- Arrays can specify `iam_model: ashrae` plus `iam_coefficient` (`b0`) or use CLI overrides (`--iam-model`, `--iam-coefficient`).
+- IAM derates only the direct component using pvlib, then recomposes `poa_global = direct + diffuse + ground` so downstream energy sums are consistent.
+
+### 10. Inverters & clipping (`engine.simulate` + `pv.power.pvwatts_ac`)
 
 - Arrays join inverter groups via `inverter_group_id`. If you provide `inverter_pdc0_w`, it's honored verbatim; otherwise we derive it from `dc_ac_ratio` and `eta_inv_nom`.
 - PVWatts inverter model returns clipped `pac_w`. We apportion group AC back to arrays using their instantaneous DC share to avoid energy creation.
 
-### 9. System losses (`pv.power.apply_losses`)
+### 11. System losses (`pv.power.apply_losses`)
 
 - Lumped `losses_percent` applied to `pac_w` to produce `pac_net_w`. Debug log captures the factor and resulting min/max.
 
-### 10. Energy integration & aggregation (`engine.simulate`)
+### 12. Energy integration & aggregation (`engine.simulate`)
 
 - Per-array timeseries stored under `(site_id, array_id)` with POA, cell temp, DC, AC raw, and AC net columns.
 - Daily rollups integrate `pac_net_w` × timestep hours (handles DST and irregular grids) into `energy_kwh`, `peak_kw`, `poa_kwh_m2`, `temp_cell_max`.
 - Rollups are aggregated per site and globally in the CLI output / MQTT payloads.
+
+---
+
+## New modeling features
+
+### Cloud-scaled weather mode (`weather.cloud_scaled.CloudScaledWeatherProvider`)
+
+- Use `--weather-mode cloud-scaled` (or `run.weather_mode: cloud-scaled`) to bypass noisy irradiance feeds and instead scale pvlib clear-sky by Open-Meteo cloud cover.
+- Converts cloud % → clearness index via `k_t = 1 - 0.75 * C**3.4`, clamps [0,1], multiplies Ineichen GHI/DNI/DHI, and preserves Open-Meteo temp/wind for SAPM temperature.
+- Emits `cloudscaled.summary` debug with clearness min/mean/max plus resulting `ghi_max` so you can diff runs quickly.
+
+### Incidence angle modifiers (IAM)
+
+- Arrays accept `iam_model: ashrae` and optional `iam_coefficient` (ASHRAE `b0`) to derate low-angle direct beam.
+- CLI overrides (`--iam-model/--iam-coefficient`) let you A/B coatings without touching configs.
+- IAM only touches `poa_direct`; we recompute `poa_global = direct + diffuse + ground` so energy accounting stays additive.
+
+### Morning/evening damping & horizon masks
+
+- `damping` (single) or `damping_morning`/`damping_evening` attenuate POA near sunrise/sunset using a cosine ramp (~1.5 h window). Ideal for self-consumption caps or shading heuristics.
+- `horizon_deg` (≥12 evenly spaced azimuth samples) blanks the direct beam when local terrain exceeds sun elevation. We interpolate circularly and leave diffuse terms untouched.
+
+### PVGIS QC + clipping
+
+- `--qc-pvgis` spins a parallel PVGIS run, compares POA energy, and clamps forecasts outside ~0.6–1.6× (wider when cloudy). Daily rows now carry `pvgis_poa_kwh_m2`, `qc_clipped`, `qc_ratio`.
+- When clipping fires we rescale POA/DC/AC timeseries so debug output, MQTT payloads, and load windows align with the adjusted totals.
+
+### Load window detection (`engine.load_window`)
+
+- Provide `base_load_w`, `min_duration_min`, and optional `required_wh` (config `run.*` or CLI flags) to scan per-site `pac_net_w` for dispatchable windows.
+- Output JSON embeds `load_windows.best|earliest|latest` with ISO stamps, kWh, duration, and peak/avg watts. Perfect for EV charging or resistive loads.
+
+### Actuals-based adjustment
+
+- `--actual-kwh-today` (or `run.actual_kwh_today`) scales only *future* intervals so cumulative energy up to “now” equals telemetry. Use `--actual-as-of` to pin the split point; we clamp to the simulated date bounds otherwise.
+- Debug emits `actual.adjust.*` events with predicted vs. actual kWh, sample counts, and applied scale for audit trails.
+
+### Open-Meteo composite fallback
+
+- `weather_source: composite` (or `--weather-source composite`) runs Open-Meteo live plus PVGIS TMY. Any NaN or negative irradiance is backfilled from PVGIS, logged via `weather.merge` and `weather.merge_detail` so you can see how often climatology stepped in.
+
+### Incidence-aware load forecasting
+
+- All per-site load windows reuse the same `pac_net_w` and interval widths used for energy integration, so dispatch planning aligns exactly with the published forecast.
+- Optional `required_wh` ensures windows supply enough energy for target loads (e.g., “need ≥6 kWh for the battery heater”).
 
 ---
 
