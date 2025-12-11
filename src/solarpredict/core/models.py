@@ -45,6 +45,8 @@ class PVArray:
     inverter_pdc0_w: Optional[float] = None
     inverter_group_id: Optional[str] = None
     horizon_deg: Optional[list[float]] = None
+    damping_morning: float = 1.0
+    damping_evening: float = 1.0
 
     def __post_init__(self):
         if not self.id:
@@ -71,6 +73,12 @@ class PVArray:
             raise ValidationError("losses_percent must be between 0 and 100")
         if not self.temp_model:
             raise ValidationError("temp_model is required")
+        for label, val in ("damping_morning", self.damping_morning), ("damping_evening", self.damping_evening):
+            if val is None:
+                object.__setattr__(self, label, 1.0)
+                val = 1.0
+            if not (0.0 <= val <= 1.0):
+                raise ValidationError(f"{label} must be between 0 and 1 (fractional attenuation)")
         if self.horizon_deg is not None:
             if len(self.horizon_deg) < 12:
                 raise ValidationError("horizon_deg must have at least 12 values (30° bins or finer)")

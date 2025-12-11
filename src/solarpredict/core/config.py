@@ -32,7 +32,7 @@ _DEF_REQUIRED_ARRAY_KEYS = {
     "losses_percent",
     "temp_model",
 }
-_OPTIONAL_ARRAY_KEYS = {"horizon_deg"}
+_OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening"}
 
 
 def _load_raw(path: Path) -> Dict[str, Any]:
@@ -73,6 +73,23 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             horizon = [float(x) for x in horizon_raw]
         else:
             raise ConfigError("horizon_deg must be string CSV or list of numbers")
+
+        damping_morning = raw.get("damping_morning")
+        damping_evening = raw.get("damping_evening")
+        if "damping" in raw and (raw["damping"] is not None):
+            # Accept single value or 2-tuple/list
+            damp_val = raw["damping"]
+            if isinstance(damp_val, (int, float)):
+                damping_morning = damping_evening = float(damp_val)
+            elif isinstance(damp_val, (list, tuple)) and len(damp_val) in {1, 2}:
+                vals = [float(v) for v in damp_val]
+                damping_morning = vals[0]
+                damping_evening = vals[1] if len(vals) > 1 else vals[0]
+            else:
+                raise ConfigError("damping must be a number or list/tuple of 1-2 numbers")
+
+        dm = float(damping_morning) if damping_morning is not None else 1.0
+        de = float(damping_evening) if damping_evening is not None else 1.0
         return PVArray(
             id=raw["id"],
             tilt_deg=float(raw["tilt_deg"]),
@@ -86,6 +103,8 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             inverter_group_id=raw.get("inverter_group_id"),
             inverter_pdc0_w=float(raw["inverter_pdc0_w"]) if raw.get("inverter_pdc0_w") is not None else None,
             horizon_deg=horizon,
+            damping_morning=dm,
+            damping_evening=de,
         )
     except ValidationError as exc:
         raise ConfigError(f"Invalid PVArray: {exc}") from exc

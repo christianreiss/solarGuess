@@ -5,6 +5,7 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
+import numpy as np
 import pandas as pd
 
 from solarpredict.core.debug import DebugCollector, NullDebugCollector, ScopedDebugCollector
@@ -148,6 +149,48 @@ def _interval_hours(index: pd.DatetimeIndex, step_seconds: float, label: str) ->
     return hours
 
 
+def _damping_factor(
+    times: pd.DatetimeIndex,
+    solar_elevation: pd.Series,
+    solar_noon_ts,
+    damping_morning: float,
+    damping_evening: float,
+    window_hours: float = 1.5,
+) -> pd.Series:
+    """Smooth attenuation factor around sunrise/sunset using cosine taper over a fixed window."""
+    if solar_noon_ts is None or solar_elevation.empty or len(times) == 0:
+        return pd.Series([1.0] * len(times), index=times, dtype=float)
+
+    daylight = solar_elevation[solar_elevation > 0]
+    if daylight.empty:
+        return pd.Series([1.0] * len(times), index=times, dtype=float)
+
+    sunrise = daylight.index[0]
+    sunset = daylight.index[-1]
+    window = pd.to_timedelta(window_hours, unit="h")
+
+    factors = pd.Series(1.0, index=times, dtype=float)
+
+    # Morning ramp-up: start at damping_morning at sunrise, reach 1.0 after window.
+    morning_mask = (times >= sunrise) & (times <= sunrise + window)
+    if morning_mask.any():
+        frac = ((times[morning_mask] - sunrise) / window)
+        frac = pd.Series(frac, index=times[morning_mask]).clip(lower=0, upper=1).astype(float)
+        blend = 0.5 - 0.5 * np.cos(np.pi * frac)
+        factors.loc[morning_mask] = damping_morning + (1.0 - damping_morning) * blend
+
+    # Evening ramp-down: start at 1.0 at sunset-window, taper to damping_evening at sunset.
+    evening_mask = (times >= sunset - window) & (times <= sunset)
+    if evening_mask.any():
+        frac = ((sunset - times[evening_mask]) / window)
+        frac = pd.Series(frac, index=times[evening_mask]).clip(lower=0, upper=1).astype(float)
+        blend = 0.5 - 0.5 * np.cos(np.pi * frac)
+        factors.loc[evening_mask] = damping_evening + (1.0 - damping_evening) * blend
+
+    factors = factors.clip(lower=min(damping_morning, damping_evening), upper=1.0)
+    return factors
+
+
 def simulate_day(
     scenario: Scenario,
     date: dt.date,
@@ -235,6 +278,8 @@ def simulate_day(
         solar_pos.index = times
         site_debug.emit("stage.solarpos", {"rows": len(solar_pos)}, ts=times[0])
 
+        solar_noon_ts = solar_pos["elevation"].idxmax() if not solar_pos.empty else None
+
         # Precompute per-array POA/temp/DC (independent of inverter grouping)
         array_data = {}
         for array in site.arrays:
@@ -261,8 +306,26 @@ def simulate_day(
             )
             arr_debug.emit("stage.temp", {"rows": len(temps)}, ts=times[0])
 
+            damping = _damping_factor(
+                times=times,
+                solar_elevation=solar_pos["elevation"],
+                solar_noon_ts=solar_noon_ts,
+                damping_morning=array.damping_morning,
+                damping_evening=array.damping_evening,
+            )
+            arr_debug.emit(
+                "damping.summary",
+                {
+                    "morning": array.damping_morning,
+                    "evening": array.damping_evening,
+                    "min_factor": float(damping.min()) if len(damping) else None,
+                    "max_factor": float(damping.max()) if len(damping) else None,
+                },
+                ts=times[0] if len(times) else None,
+            )
+
             pdc = pvwatts_dc(
-                effective_irradiance=poa["poa_global"],
+                effective_irradiance=poa["poa_global"] * damping,
                 temp_cell=temps,
                 pdc0_w=array.pdc0_w,
                 gamma_pdc=array.gamma_pdc,
