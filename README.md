@@ -234,7 +234,7 @@ Rules of thumb:
 
 | Command | Description |
 | --- | --- |
-| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
+| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--weather-mode {standard,cloud-scaled}`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
 | `config` | Interactive YAML/JSON scenario builder/editor. Guides you through locations and arrays with validation using the same models as the engine. |
 
 All CLI code lives in `src/solarpredict/cli.py` (Typer-based). Weather provider defaults to Open-Meteo but the CLI factory (`default_weather_provider`) makes dependency injection easy for tests.

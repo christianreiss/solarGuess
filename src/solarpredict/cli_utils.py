@@ -61,6 +61,8 @@ def _ensure_run_defaults(run: dict) -> dict:
         base["actual_limit_suppress"] = False
     if "actual_as_of" not in base:
         base["actual_as_of"] = None
+    if "weather_mode" not in base:
+        base["weather_mode"] = None
     return base
 
 

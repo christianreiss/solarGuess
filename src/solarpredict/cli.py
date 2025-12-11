@@ -183,9 +183,9 @@ def run(
         "open-meteo",
         help="Weather provider: 'open-meteo' (default), 'pvgis-tmy' (typical meteorological year), or 'composite' (open-meteo primary with PVGIS fallback).",
     ),
-    weather_mode: str = typer.Option(
-        "standard",
-        help="Weather processing mode: 'standard' (use provider irradiance) or 'cloud-scaled' (clear-sky scaled by cloud cover).",
+    weather_mode: Optional[str] = typer.Option(
+        None,
+        help="Weather processing mode: 'standard' (use provider irradiance) or 'cloud-scaled' (clear-sky scaled by cloud cover). Defaults to run.weather_mode or 'standard'.",
     ),
     pvgis_cache_dir: Optional[Path] = typer.Option(
         None,
@@ -273,7 +273,11 @@ def run(
                 raise typer.Exit(code=0)
 
     weather_source = weather_source.lower()
-    weather_mode = weather_mode.lower()
+    run_section = raw_cfg.get("run", {}) if raw_cfg else {}
+
+    # Resolve weather_mode with config fallback.
+    effective_weather_mode = weather_mode or run_section.get("weather_mode") or "standard"
+    weather_mode = effective_weather_mode.lower()
     if weather_source == "open-meteo":
         provider = default_weather_provider(debug=debug_collector)
     elif weather_source == "pvgis-tmy":
@@ -287,8 +291,6 @@ def run(
 
     if weather_mode not in {"standard", "cloud-scaled"}:
         _exit_with_error("weather_mode must be 'standard' or 'cloud-scaled'")
-
-    run_section = raw_cfg.get("run", {}) if raw_cfg else {}
 
     effective_timestep = (
         timestep
