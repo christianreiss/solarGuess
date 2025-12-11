@@ -27,17 +27,17 @@ Format: `X.Y.Z` where **X** is one self-contained module (doable in a single tas
   - [x] 2.3. Tests  
     - [x] 2.3.1. Deterministic unit test on synthetic day: verify AM/PM watts reduced by expected factor; midday untouched.  
 
-3. Interval Export
-3.1. CLI/format  
-3.1.1. Add `--intervals` flag (json or csv) to write per-interval watts/Wh/Wh_cum plus existing daily.  
-3.1.2. Preserve current defaults; ensure backward compatibility on `--format`.
-3.2. Serialization  
-3.2.1. JSON: records with site/array timestamps, pac_net_w, poa_global, interval_h, wh_period, wh_cum.  
-3.2.2. CSV: tidy long-format with columns site,array,ts,metric,value.  
-3.2.3. Debug: note path and row count.
-3.3. Tests  
-3.3.1. CLI test generates intervals file; validate columns and first/last cumulative values.  
-3.3.2. Compileall/pytest coverage updates.
+- [x] 3. Interval Export  
+  - [x] 3.1. CLI/format  
+    - [x] 3.1.1. Add `--intervals` flag (json or csv) to write per-interval watts/Wh/Wh_cum plus existing daily.  
+    - [x] 3.1.2. Preserve current defaults; ensure backward compatibility on `--format`.  
+  - [x] 3.2. Serialization  
+    - [x] 3.2.1. JSON: records with site/array timestamps, pac_net_w, poa_global, interval_h, wh_period, wh_cum.  
+    - [x] 3.2.2. CSV: tidy long-format with columns site,array,ts,metric,value.  
+    - [x] 3.2.3. Debug: note path and row count.  
+  - [x] 3.3. Tests  
+    - [x] 3.3.1. CLI test generates intervals file; validate columns and first/last cumulative values.  
+    - [x] 3.3.2. Compileall/pytest coverage updates.  
 
 4. Actual Production Adjustment
 4.1. Config/CLI  

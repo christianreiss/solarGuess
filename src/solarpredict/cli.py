@@ -13,7 +13,7 @@ import datetime as dt
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 import typer
@@ -194,6 +194,10 @@ def run(
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
+    intervals: Optional[Path] = typer.Option(
+        None,
+        help="Optional per-interval output (.json or .csv) with pac_net_w, poa_global, interval_h, wh_period, wh_cum",
+    ),
     force: bool = typer.Option(False, "--force", help="Run even if output already generated today"),
 ):
     """Run a daily simulation for the provided scenario."""
@@ -356,6 +360,23 @@ def run(
     else:
         _exit_with_error("format must be json or csv")
 
+    # Optional per-interval export
+    if intervals:
+        intervals_path = intervals
+        intervals_fmt = intervals_path.suffix.lower().lstrip(".")
+        intervals_df = _build_intervals_df(result.timeseries)
+        if intervals_fmt == "json":
+            serializable = intervals_df.copy()
+            for col in serializable.columns:
+                if str(serializable[col].dtype).startswith("datetime64"):
+                    serializable[col] = serializable[col].astype(str)
+            intervals_path.write_text(serializable.to_json(orient="records", indent=2))
+        elif intervals_fmt == "csv":
+            intervals_df.to_csv(intervals_path, index=False)
+        else:
+            _exit_with_error("intervals path must end with .json or .csv")
+        typer.echo(f"Wrote interval data to {intervals_path} ({len(intervals_df)} rows)")
+
     typer.echo(daily.to_string(index=False))
     typer.echo(f"Wrote results to {output_path}")
     if debug:
@@ -368,6 +389,39 @@ def _list_sites(sites: List[Site]) -> None:
         return
     for site in sites:
         typer.echo(f"- {site.id}: {site.location.lat},{site.location.lon} tz={site.location.tz} arrays={len(site.arrays)}")
+
+
+def _build_intervals_df(timeseries: Dict[Tuple[str, str], pd.DataFrame]) -> pd.DataFrame:
+    """Flatten per-array timeseries into a single dataframe with Wh metrics."""
+    frames: List[pd.DataFrame] = []
+    for (site_id, array_id), df in timeseries.items():
+        if df is None or df.empty:
+            continue
+        ts_df = df.sort_index().copy()
+        ts_df["wh_period"] = (ts_df["pac_net_w"] * ts_df["interval_h"]).astype(float)
+        ts_df["wh_cum"] = ts_df["wh_period"].cumsum()
+        ts_df["site"] = site_id
+        ts_df["array"] = array_id
+        ts_df["ts"] = ts_df.index
+        frames.append(
+            ts_df[
+                [
+                    "site",
+                    "array",
+                    "ts",
+                    "pac_net_w",
+                    "poa_global",
+                    "interval_h",
+                    "wh_period",
+                    "wh_cum",
+                ]
+            ]
+        )
+    if not frames:
+        return pd.DataFrame(
+            columns=["site", "array", "ts", "pac_net_w", "poa_global", "interval_h", "wh_period", "wh_cum"]
+        )
+    return pd.concat(frames)
 
 
 @app.command()
