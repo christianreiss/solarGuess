@@ -183,35 +183,37 @@ def test_run_force_bypasses_skip(monkeypatch, tmp_path):
     assert called["simulate"] is True
 
 
-def test_config_command_add_edit_delete(monkeypatch, tmp_path):
+def test_config_command_add_edit_delete(tmp_path):
     path = tmp_path / "config.yaml"
 
-    inputs = iter(
-        [
-            "a",  # add site
-            "site1",
-            "0",
-            "0",
-            "UTC",
-            "",
-            "loc1",
-            "array1",
-            "20",
-            "0",
-            "5000",
-            "-0.004",
-            "1.2",
-            "0.96",
-            "5",
-            "close_mount_glass_glass",
-            "n",  # stop modifying arrays\n
-            "s",  # save\n
-        ]
-    )
+    input_lines = [
+        "a",  # add site
+        "site1",
+        "0",
+        "0",
+        "UTC",
+        "",
+        "loc1",
+        "array1",
+        "20",
+        "0",
+        "5000",
+        "-0.004",
+        "1.2",
+        "0.96",
+        "5",
+        "close_mount_glass_glass",
+        "",  # inverter group id blank
+        "",  # inverter pdc0_w blank
+        "",  # horizon blank
+        "n",  # Add array? prompt default False
+        "n",  # Edit existing array?
+        "n",  # Delete array?
+        "n",  # Modify arrays again?
+        "s",  # save\n
+    ]
 
-    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: next(inputs))
-
-    res = runner.invoke(cli.app, ["config", "--no-tui", str(path)])
+    res = runner.invoke(cli.app, ["config", "--no-tui", str(path)], input="\n".join(input_lines))
     assert res.exit_code == 0, res.stdout
 
     scenario = load_scenario(path)

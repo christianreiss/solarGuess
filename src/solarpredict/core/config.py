@@ -32,6 +32,7 @@ _DEF_REQUIRED_ARRAY_KEYS = {
     "losses_percent",
     "temp_model",
 }
+_OPTIONAL_ARRAY_KEYS = {"horizon_deg"}
 
 
 def _load_raw(path: Path) -> Dict[str, Any]:
@@ -63,6 +64,15 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
     if missing:
         raise ConfigError(f"Missing array fields: {sorted(missing)}")
     try:
+        horizon_raw = raw.get("horizon_deg")
+        if horizon_raw is None:
+            horizon = None
+        elif isinstance(horizon_raw, str):
+            horizon = [float(x.strip()) for x in horizon_raw.split(",") if x.strip()]
+        elif isinstance(horizon_raw, (list, tuple)):
+            horizon = [float(x) for x in horizon_raw]
+        else:
+            raise ConfigError("horizon_deg must be string CSV or list of numbers")
         return PVArray(
             id=raw["id"],
             tilt_deg=float(raw["tilt_deg"]),
@@ -75,6 +85,7 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             temp_model=raw["temp_model"],
             inverter_group_id=raw.get("inverter_group_id"),
             inverter_pdc0_w=float(raw["inverter_pdc0_w"]) if raw.get("inverter_pdc0_w") is not None else None,
+            horizon_deg=horizon,
         )
     except ValidationError as exc:
         raise ConfigError(f"Invalid PVArray: {exc}") from exc

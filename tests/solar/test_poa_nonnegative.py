@@ -23,6 +23,7 @@ def test_poa_nonnegative_clipped():
         solar_zenith=solar_zenith,
         solar_azimuth=solar_azimuth,
         albedo=0.2,
+        horizon_deg=[10] * 12,  # should not introduce negatives
     )
 
     assert (df[["poa_global", "poa_direct", "poa_diffuse", "poa_ground_diffuse"]] >= 0).all().all()

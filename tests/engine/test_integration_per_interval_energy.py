@@ -31,9 +31,24 @@ class GapWeather:
 
 def _scenario():
     loc = Location(id="loc", lat=0, lon=0, tz="UTC")
-    site = Site(id="s", location=loc, arrays=[PVArray(id="a", tilt_deg=0, azimuth_deg=0, pdc0_w=1000,
-                                                       gamma_pdc=-0.004, dc_ac_ratio=1.0, eta_inv_nom=0.96,
-                                                       losses_percent=0, temp_model="close_mount_glass_glass")])
+    site = Site(
+        id="s",
+        location=loc,
+        arrays=[
+            PVArray(
+                id="a",
+                tilt_deg=0,
+                azimuth_deg=0,
+                pdc0_w=1000,
+                gamma_pdc=-0.004,
+                dc_ac_ratio=1.0,
+                eta_inv_nom=0.96,
+                losses_percent=0,
+                temp_model="close_mount_glass_glass",
+                horizon_deg=[0] * 12,
+            )
+        ],
+    )
     return Scenario(sites=[site])
 
 

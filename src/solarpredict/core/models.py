@@ -44,6 +44,7 @@ class PVArray:
     temp_model: str
     inverter_pdc0_w: Optional[float] = None
     inverter_group_id: Optional[str] = None
+    horizon_deg: Optional[list[float]] = None
 
     def __post_init__(self):
         if not self.id:
@@ -70,6 +71,19 @@ class PVArray:
             raise ValidationError("losses_percent must be between 0 and 100")
         if not self.temp_model:
             raise ValidationError("temp_model is required")
+        if self.horizon_deg is not None:
+            if len(self.horizon_deg) < 12:
+                raise ValidationError("horizon_deg must have at least 12 values (30° bins or finer)")
+            cleaned = []
+            for val in self.horizon_deg:
+                try:
+                    fval = float(val)
+                except Exception as exc:  # pragma: no cover - defensive
+                    raise ValidationError(f"horizon_deg contains non-numeric entry: {val}") from exc
+                if not (0.0 <= fval <= 90.0):
+                    raise ValidationError("horizon_deg values must be between 0 and 90 degrees")
+                cleaned.append(fval)
+            object.__setattr__(self, "horizon_deg", cleaned)
 
 
 @dataclass(frozen=True)

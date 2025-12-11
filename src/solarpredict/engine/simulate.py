@@ -247,6 +247,7 @@ def simulate_day(
                 dhi=wx["dhi_wm2"],
                 solar_zenith=solar_pos["zenith"],
                 solar_azimuth=solar_pos["azimuth"],
+                horizon_deg=array.horizon_deg,
                 debug=arr_debug,
             )
             arr_debug.emit("stage.poa", {"rows": len(poa)}, ts=times[0])

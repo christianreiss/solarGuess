@@ -81,6 +81,9 @@ def _prompt_location(existing: Location | None = None) -> Location:
 def _prompt_array(existing: PVArray | None = None) -> PVArray:
     def prompt_float(label: str, default: float) -> float:
         return float(typer.prompt(label, default=str(default)))
+    def prompt_optional_float(label: str, default: float | None) -> float | None:
+        raw = typer.prompt(label, default="" if default is None else str(default))
+        return float(raw) if str(raw).strip() else None
 
     arr_id = typer.prompt("Array id", default=existing.id if existing else "array1")
     tilt_deg = prompt_float("Tilt deg", existing.tilt_deg if existing else 30.0)
@@ -94,10 +97,14 @@ def _prompt_array(existing: PVArray | None = None) -> PVArray:
     inverter_group_id = typer.prompt(
         "Inverter group id (blank = none)", default=existing.inverter_group_id if existing else ""
     ).strip() or None
-    inv_pdc_raw = typer.prompt(
-        "Inverter pdc0_w (blank = derive)", default=str(existing.inverter_pdc0_w) if existing and existing.inverter_pdc0_w is not None else ""
+    inverter_pdc0_w = prompt_optional_float(
+        "Inverter pdc0_w (blank = derive)", existing.inverter_pdc0_w if existing else None
     )
-    inverter_pdc0_w = float(inv_pdc_raw) if inv_pdc_raw.strip() else None
+    horizon_raw = typer.prompt(
+        "Horizon profile (CSV of deg, blank = none)",
+        default=",".join(str(v) for v in existing.horizon_deg) if existing and existing.horizon_deg else "",
+    ).strip()
+    horizon = [float(v) for v in horizon_raw.split(",") if v.strip()] if horizon_raw else None
     try:
         return PVArray(
             id=arr_id,
@@ -111,6 +118,7 @@ def _prompt_array(existing: PVArray | None = None) -> PVArray:
             temp_model=temp_model,
             inverter_group_id=inverter_group_id,
             inverter_pdc0_w=inverter_pdc0_w,
+            horizon_deg=horizon,
         )
     except ValidationError as exc:  # pragma: no cover - validated via CLI tests
         _exit_with_error(str(exc))

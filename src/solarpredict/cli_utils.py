@@ -37,6 +37,8 @@ def scenario_to_dict(scenario: Scenario) -> dict:
             data["inverter_group_id"] = arr.inverter_group_id
         if arr.inverter_pdc0_w is not None:
             data["inverter_pdc0_w"] = arr.inverter_pdc0_w
+        if arr.horizon_deg is not None:
+            data["horizon_deg"] = arr.horizon_deg
         return data
 
     return {
