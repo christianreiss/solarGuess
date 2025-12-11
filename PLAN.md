@@ -50,16 +50,16 @@ Format: `X.Y.Z` where **X** is one self-contained module (doable in a single tas
   - [x] 4.3. Tests  
     - [x] 4.3.1. Synthetic timeseries: ensure scaling only future intervals; zero resets forecast.  
 
-5. Load Window Finder
-5.1. Inputs  
-5.1.1. Config/CLI accepts `base_load_w`, `min_duration_min`, optional `required_wh`.  
-5.1.2. Validate positive durations/loads.
-5.2. Computation  
-5.2.1. From `pac_net_w` & `interval_h`, find intervals exceeding base load; compute earliest/best/latest windows, optional energy satisfaction.  
-5.2.2. Return in output payload; debug window stats.
-5.3. Tests  
-5.3.1. Unit tests on synthetic profiles (single window, multiple windows, none).  
-5.3.2. CLI integration to ensure serialization.
+ - [x] 5. Load Window Finder  
+   - [x] 5.1. Inputs  
+     - [x] 5.1.1. Config/CLI accepts `base_load_w`, `min_duration_min`, optional `required_wh`.  
+     - [x] 5.1.2. Validate positive durations/loads.  
+   - [x] 5.2. Computation  
+     - [x] 5.2.1. From `pac_net_w` & `interval_h`, find intervals exceeding base load; compute earliest/best/latest windows, optional energy satisfaction.  
+     - [x] 5.2.2. Return in output payload; debug window stats.  
+   - [x] 5.3. Tests  
+     - [x] 5.3.1. Unit tests on synthetic profiles (single window, multiple windows, none).  
+     - [x] 5.3.2. CLI integration to ensure serialization.
 
 6. Cloud-Cover Scaling Path
 6.1. Weather ingest  
