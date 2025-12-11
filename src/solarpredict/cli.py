@@ -23,7 +23,7 @@ from solarpredict.core.config import ConfigError, load_scenario
 from solarpredict.core import config as config_mod
 from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
-from solarpredict.engine.simulate import simulate_day
+from solarpredict.engine.simulate import apply_actual_adjustment, simulate_day
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
@@ -191,6 +191,14 @@ def run(
         None,
         help="Compare forecast against PVGIS TMY baseline (sanity check). If omitted, falls back to config run.qc_pvgis (default false).",
     ),
+    actual_kwh_today: Optional[float] = typer.Option(
+        None,
+        help="Observed energy for the day so far (kWh). Scales remaining intervals so forecast aligns with actuals.",
+    ),
+    actual_limit_suppress: Optional[bool] = typer.Option(
+        None,
+        help="Suppress output when applying actual adjustment fails validation (legacy limit=0 behaviour).",
+    ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL to this path"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
     output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
@@ -256,9 +264,11 @@ def run(
     else:
         _exit_with_error(f"Unsupported weather_source '{weather_source}'")
 
+    run_section = raw_cfg.get("run", {}) if raw_cfg else {}
+
     effective_timestep = (
         timestep
-        or (raw_cfg.get("run", {}).get("timestep") if raw_cfg else None)
+        or run_section.get("timestep")
         or "1h"
     )
 
@@ -271,8 +281,22 @@ def run(
         weather_label=weather_label,
     )
 
+    # Optional actual adjustment
+    actual_cfg = run_section.get("actual_kwh_today") if run_section else None
+    suppress_cfg = run_section.get("actual_limit_suppress") if run_section else None
+    effective_actual = actual_kwh_today if actual_kwh_today is not None else actual_cfg
+    suppress_flag = actual_limit_suppress if actual_limit_suppress is not None else suppress_cfg
+    if effective_actual is not None:
+        try:
+            result = apply_actual_adjustment(result, effective_actual, debug_collector)
+        except Exception as exc:
+            debug_collector.emit("actual.adjust.error", {"error": str(exc)}, ts=date_obj)
+            if suppress_flag:
+                typer.echo("Actual adjustment failed; suppressing output per limit flag", err=True)
+                raise typer.Exit(code=1)
+
     # Optional PVGIS QC sanity check: compare forecast energy/POA vs climatology.
-    qc_enabled = qc_pvgis if qc_pvgis is not None else (raw_cfg.get("run", {}).get("qc_pvgis") if raw_cfg else False)
+    qc_enabled = qc_pvgis if qc_pvgis is not None else run_section.get("qc_pvgis", False)
     if qc_enabled:
         qc_provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
         # Run a baseline simulation with PVGIS (hourly only) to get comparable POA energy per m².

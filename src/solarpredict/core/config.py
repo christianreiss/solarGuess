@@ -35,6 +35,18 @@ _DEF_REQUIRED_ARRAY_KEYS = {
 _OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening"}
 
 
+# Run block accepts optional tuning; validated when referenced.
+_OPTIONAL_RUN_KEYS = {
+    "actual_kwh_today",
+    "actual_limit_suppress",
+    "timestep",
+    "format",
+    "output",
+    "debug",
+    "qc_pvgis",
+}
+
+
 def _load_raw(path: Path) -> Dict[str, Any]:
     text = path.read_text()
     if path.suffix.lower() in {".yaml", ".yml"}:

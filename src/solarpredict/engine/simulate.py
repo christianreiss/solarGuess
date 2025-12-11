@@ -58,6 +58,162 @@ class SimulationResult:
     timeseries: Dict[Tuple[str, str], pd.DataFrame]
 
 
+def _now_like(index: pd.DatetimeIndex) -> pd.Timestamp:
+    """Return a timezone-aware 'now' matching the provided index tz.
+
+    Tests can monkeypatch this function to control the reference time without
+    touching datetime globally.
+    """
+
+    tz = index.tz if hasattr(index, "tz") else None
+    return pd.Timestamp.now(tz=tz)
+
+
+def apply_actual_adjustment(
+    result: SimulationResult,
+    actual_kwh_today: float,
+    debug: DebugCollector,
+    now_ts: pd.Timestamp | None = None,
+) -> SimulationResult:
+    """Scale only future intervals so cumulative matches provided actual.
+
+    - Compares predicted cumulative energy up to ``now_ts`` against
+      ``actual_kwh_today``.
+    - Multiplies future PAC/DC by a constant factor to make the remaining
+      forecast align with the delta.
+    - Leaves POA/temperature untouched (these are weather-driven inputs).
+    - Returns a new SimulationResult; original inputs are not mutated.
+    """
+
+    try:
+        actual = float(actual_kwh_today)
+    except Exception as exc:
+        raise ValueError("actual_kwh_today must be numeric") from exc
+
+    if actual < 0:
+        raise ValueError("actual_kwh_today must be non-negative")
+
+    if actual == 0:
+        debug.emit("actual.adjust.skip", {"reason": "reset", "actual_kwh_today": actual})
+        return result
+
+    if not isinstance(result, SimulationResult):
+        # Defensive: allow duck-typed in tests
+        result = SimulationResult(daily=getattr(result, "daily", pd.DataFrame()), timeseries=getattr(result, "timeseries", {}))
+
+    if not result.timeseries:
+        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"})
+        return result
+
+    # Pick a representative index to derive timezone and window.
+    sample_df = next(iter(result.timeseries.values()))
+    if sample_df is None or sample_df.empty:
+        debug.emit("actual.adjust.skip", {"reason": "empty_timeseries"})
+        return result
+
+    ts_index = sample_df.index
+    now_ts = now_ts or _now_like(ts_index)
+
+    # Compute cumulative energy up to now and remaining energy.
+    cumulative_kwh = 0.0
+    future_energy_kwh = 0.0
+    future_sample_count = 0
+    date_val = None
+
+    for df in result.timeseries.values():
+        if df is None or df.empty:
+            continue
+        df_sorted = df.sort_index()
+        energy_period = (df_sorted["pac_net_w"] * df_sorted["interval_h"]).astype(float) / 1000.0
+        past_mask = df_sorted.index <= now_ts
+        future_mask = df_sorted.index > now_ts
+        cumulative_kwh += float(energy_period[past_mask].sum())
+        future_energy_kwh += float(energy_period[future_mask].sum())
+        future_sample_count += int(future_mask.sum())
+        if date_val is None:
+            date_val = df_sorted.index[0].date().isoformat()
+
+    if cumulative_kwh <= 0:
+        debug.emit(
+            "actual.adjust.skip",
+            {"reason": "zero_predicted", "actual_kwh_today": actual, "now": str(now_ts)},
+        )
+        return result
+
+    scale = (actual - cumulative_kwh) / future_energy_kwh + 1 if future_energy_kwh > 0 else 1.0
+    # If no future energy remains, nothing to scale; keep as-is.
+    if future_energy_kwh == 0:
+        debug.emit(
+            "actual.adjust.skip",
+            {"reason": "no_future_samples", "actual_kwh_today": actual, "cumulative_kwh": cumulative_kwh},
+        )
+        return result
+
+    # Avoid negative scaling; clamp at zero.
+    if scale < 0:
+        scale = 0.0
+
+    adjusted_timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
+
+    for key, df in result.timeseries.items():
+        if df is None or df.empty:
+            adjusted_timeseries[key] = df
+            continue
+        df_sorted = df.sort_index()
+        future_mask = df_sorted.index > now_ts
+        df_scaled = df_sorted.copy()
+        for col in ("pdc_w", "pac_w", "pac_net_w"):
+            if col in df_scaled.columns:
+                df_scaled.loc[future_mask, col] = df_scaled.loc[future_mask, col] * scale
+        adjusted_timeseries[key] = df_scaled
+
+    # Recompute daily aggregates from adjusted timeseries.
+    daily_rows = []
+    for key, df in adjusted_timeseries.items():
+        if df is None or df.empty:
+            continue
+        site_id, array_id = key
+        energy_kwh = float(((df["pac_net_w"] * df["interval_h"]) / 1000.0).sum())
+        peak_kw = float(df["pac_net_w"].max() / 1000.0)
+        # Retain POA and temp maxima from existing result; fallback to computed if missing.
+        poa_kwh_m2 = None
+        temp_cell_max = None
+        if key in result.timeseries:
+            original_df = result.timeseries[key]
+            poa_kwh_m2 = float(((original_df["poa_global"] * original_df["interval_h"]) / 1000.0).sum())
+            temp_cell_max = float(original_df["temp_cell_c"].max())
+
+        daily_rows.append(
+            {
+                "site": site_id,
+                "array": array_id,
+                "date": result.daily.iloc[0]["date"],
+                "energy_kwh": energy_kwh,
+                "peak_kw": peak_kw,
+                "poa_kwh_m2": poa_kwh_m2,
+                "temp_cell_max": temp_cell_max,
+            }
+        )
+
+    adjusted_daily = pd.DataFrame(daily_rows)
+    if date_val and "date" in result.daily.columns:
+        adjusted_daily["date"] = date_val
+
+    debug.emit(
+        "actual.adjust.applied",
+        {
+            "actual_kwh_today": actual,
+            "predicted_to_now_kwh": cumulative_kwh,
+            "future_energy_kwh": future_energy_kwh,
+            "scale_future": scale,
+            "now": str(now_ts),
+            "future_samples": future_sample_count,
+        },
+    )
+
+    return SimulationResult(daily=adjusted_daily, timeseries=adjusted_timeseries)
+
+
 def _daterange_bounds(date: dt.date) -> tuple[str, str]:
     return date.isoformat(), (date + dt.timedelta(days=1)).isoformat()
 

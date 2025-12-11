@@ -53,6 +53,15 @@ def scenario_to_dict(scenario: Scenario) -> dict:
     }
 
 
+def _ensure_run_defaults(run: dict) -> dict:
+    base = run or {}
+    if "actual_kwh_today" not in base:
+        base["actual_kwh_today"] = None
+    if "actual_limit_suppress" not in base:
+        base["actual_limit_suppress"] = False
+    return base
+
+
 def _merge_mqtt_topics(existing: dict, updates: dict) -> dict:
     """Merge mqtt.publish_topics when caller supplies structured topic flags.
 
@@ -105,7 +114,9 @@ def write_scenario(path: Path, scenario: Scenario, mqtt: Optional[dict] = None, 
         else:
             base["mqtt"] = mqtt
     if run is not None:
-        base["run"] = run
+        base["run"] = _ensure_run_defaults(run)
+    elif base.get("run") is not None:
+        base["run"] = _ensure_run_defaults(base.get("run", {}))
 
     if path.suffix.lower() in {".yaml", ".yml", ""}:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -45,6 +45,8 @@ def _write_fixture_with_run(tmp_path: Path, timestep: str = "15m") -> Path:
         cfg.read_text()
         + "\nrun:\n"
         + f"  timestep: {timestep}\n"
+        + "  actual_kwh_today: 1.5\n"
+        + "  actual_limit_suppress: false\n"
     )
     return cfg
 
