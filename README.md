@@ -360,6 +360,16 @@ PYTHONPATH=src solarguess publish-mqtt \
   --verify --publish-retries 3 --retry-delay 2 --skip-if-fresh
 ```
 
+### Cron-friendly wrapper
+
+For unattended runs, `./guess.sh` computes a per-day output path (supports `run.output: json/%F.json`)
+and then publishes that same file to MQTT.
+
+```bash
+./guess.sh              # uses today's date
+./guess.sh 2025-12-12   # explicit date (YYYY-MM-DD)
+```
+
 - Publishes to `solarguess/forecast` and `solarguess/availability` with retained messages.
 - Discovery payload registers `sensor.solarguess_forecast` whose state is `total_energy_kwh`; attributes mirror the per-site/array breakdown.
 - Publishing only proceeds when the local `generated_at` is newer *and* the payload changed (prevents timestamp churn).

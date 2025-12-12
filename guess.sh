@@ -28,29 +28,38 @@ if [ -z "$PY_BIN" ]; then
   exit 127
 fi
 
-# derive output path: prefer run.output; else derive from first site id; else fallback
-OUT=$($PY_BIN - <<'PY'
-import yaml, pathlib
+# derive output path: prefer run.output from config, but allow strftime-style
+# tokens so we can keep per-day history (json/YYYY-MM-DD.json).
+OUT=$($PY_BIN - <<PY
+import datetime as dt
+import pathlib
+import yaml
+
+date = dt.date.fromisoformat("${DATE}")
 cfg = pathlib.Path("etc/config.yaml")
+
+out = None
 if cfg.exists():
     data = yaml.safe_load(cfg.read_text()) or {}
     run = data.get("run") or {}
-    if run.get("output"):
-        print(run["output"])
-        raise SystemExit
-    sites = data.get("sites") or []
-    if sites and isinstance(sites, list) and sites[0].get("id"):
-        print(f"{sites[0]['id']}_live.json")
-        raise SystemExit
-print("live_results.json")
+    out = run.get("output")
+
+if not out:
+    out = "json/%F.json"
+
+out = str(out)
+out = out.replace("%F", date.isoformat())
+print(out)
 PY
 )
 
-PYTHONPATH=src $PY_BIN -m solarguess run \
+mkdir -p "$(dirname "$OUT")"
+
+PYTHONPATH=src $PY_BIN -m solarpredict.cli run \
   --config etc/config.yaml \
   --date "$DATE" \
   --output "$OUT"
 
-PYTHONPATH=src $PY_BIN -m solarguess publish-mqtt \
+PYTHONPATH=src $PY_BIN -m solarpredict.cli publish-mqtt \
   --config etc/config.yaml \
   --input "$OUT"
