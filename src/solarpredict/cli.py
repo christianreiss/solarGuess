@@ -226,7 +226,10 @@ def run(
     ),
     debug: Optional[Path] = typer.Option(None, help="Write debug JSONL/JSON to this path (json = single document)"),
     format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
-    output: Optional[Path] = typer.Option(None, help="Output file path; defaults to results.<format>"),
+    output: Optional[Path] = typer.Option(
+        None,
+        help="Output file path. Default: json/YYYY-MM-DD.json (when --format=json), else results.<format>.",
+    ),
     intervals: Optional[Path] = typer.Option(
         None,
         help="Optional per-interval output (.json or .csv) with pac_net_w, poa_global, interval_h, wh_period, wh_cum",
@@ -248,7 +251,19 @@ def run(
         _exit_with_error("date must be YYYY-MM-DD")
 
     debug_collector = build_debug_collector(debug) if debug else NullDebugCollector()
-    output_path = output or Path(f"results.{format}")
+    if output is not None:
+        output_path = output
+    else:
+        # Default to a date-keyed JSON time series on disk so cron runs naturally
+        # accumulate historical forecasts without extra scripting.
+        #
+        # Note: this default is only used when the user does not explicitly pass
+        # --output and the config does not set run.output (handled by wrapper scripts).
+        if format.lower() == "json":
+            output_path = Path("json") / f"{date_obj.isoformat()}.json"
+        else:
+            output_path = Path(f"results.{format}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not force and output_path.exists():
         existing = None
@@ -377,7 +392,13 @@ def run(
 
     if effective_actual is not None:
         try:
-            result = apply_actual_adjustment(result, effective_actual, debug_collector, now_ts=parsed_as_of)
+            result = apply_actual_adjustment(
+                result,
+                effective_actual,
+                debug_collector,
+                now_ts=parsed_as_of,
+                series_label=weather_label,
+            )
         except Exception as exc:
             debug_collector.emit("actual.adjust.error", {"error": str(exc)}, ts=date_obj)
             if suppress_flag:

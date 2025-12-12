@@ -78,6 +78,8 @@ def apply_actual_adjustment(
     actual_kwh_today: float,
     debug: DebugCollector,
     now_ts: pd.Timestamp | None = None,
+    *,
+    series_label: str = "end",
 ) -> SimulationResult:
     """Scale only future intervals so cumulative matches provided actual.
 
@@ -124,6 +126,26 @@ def apply_actual_adjustment(
         now_ts = ts_index.max()
 
     # Compute cumulative energy up to now and remaining energy.
+    #
+    # `now_ts` is a wall-clock "as of" moment; our series index timestamps are
+    # provider samples which are typically labeled at interval ends (the CLI
+    # defaults to `weather_label="end"`). Without knowing the labeling mode
+    # here, using `index <= now_ts` tends to over-count the "current" interval
+    # around midday (e.g. counting the 12:00 sample as already happened when the
+    # 12:00–13:00 interval is still in progress).
+    #
+    # Determine how to interpret timestamps for splitting "past" vs "future".
+    #
+    # `series_label` matches the simulator/CLI `weather_label`:
+    # - "end": timestamp marks interval end (t-step, t]; current interval usually ends in the future.
+    # - "start": timestamp marks interval start [t, t+step); current interval starts in the past.
+    # - "center": midpoint semantics; we treat it like "end" for splitting.
+    #
+    # Without a label, blindly using `index <= now_ts` can misclassify the current
+    # interval and make the scaling ineffective (or double-counted).
+    label = (series_label or "end").lower()
+    if label not in {"start", "end", "center"}:
+        raise ValueError("series_label must be 'start', 'end', or 'center'")
     cumulative_kwh = 0.0
     future_energy_kwh = 0.0
     future_sample_count = 0
@@ -134,8 +156,21 @@ def apply_actual_adjustment(
             continue
         df_sorted = df.sort_index()
         energy_period = (df_sorted["pac_net_w"] * df_sorted["interval_h"]).astype(float) / 1000.0
-        past_mask = df_sorted.index <= now_ts
-        future_mask = df_sorted.index > now_ts
+        idx = df_sorted.index
+        step_seconds = _infer_step_seconds(idx, "1h")
+        split_ts = now_ts
+        if step_seconds > 0 and now_ts not in idx:
+            half = pd.to_timedelta(step_seconds / 2.0, unit="s")
+            if label in {"end", "center"}:
+                split_ts = now_ts - half
+            else:  # start-labeled
+                split_ts = now_ts + half
+            if split_ts < idx.min():
+                split_ts = idx.min()
+            if split_ts > idx.max():
+                split_ts = idx.max()
+        past_mask = idx <= split_ts
+        future_mask = idx > split_ts
         cumulative_kwh += float(energy_period[past_mask].sum())
         future_energy_kwh += float(energy_period[future_mask].sum())
         future_sample_count += int(future_mask.sum())
@@ -167,7 +202,20 @@ def apply_actual_adjustment(
             adjusted_timeseries[key] = df
             continue
         df_sorted = df.sort_index()
-        future_mask = df_sorted.index > now_ts
+        idx = df_sorted.index
+        step_seconds = _infer_step_seconds(idx, "1h")
+        split_ts = now_ts
+        if step_seconds > 0 and now_ts not in idx:
+            half = pd.to_timedelta(step_seconds / 2.0, unit="s")
+            if label in {"end", "center"}:
+                split_ts = now_ts - half
+            else:  # start-labeled
+                split_ts = now_ts + half
+            if split_ts < idx.min():
+                split_ts = idx.min()
+            if split_ts > idx.max():
+                split_ts = idx.max()
+        future_mask = idx > split_ts
         df_scaled = df_sorted.copy()
         for col in ("pdc_w", "pac_w", "pac_net_w"):
             if col in df_scaled.columns:

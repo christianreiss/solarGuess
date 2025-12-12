@@ -1,0 +1,26 @@
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+/root/solarguess/src/solarpredict/engine/simulate.py:609: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  pac_arr = pac_group * share[a].fillna(0)
+QC warning: zirpennest/pv_array_south_primary PVGIS POA ratio 2.31 outside [0.6,1.6] (cloudy=False)
+QC warning: zirpennest/pv_array_south_secondary PVGIS POA ratio 1.61 outside [0.6,1.6] (cloudy=False)
+QC warning: zirpennest/pv_array_north_secondary PVGIS POA ratio 1.61 outside [0.6,1.6] (cloudy=False)
+QC warning: zirpennest/solarfarm PVGIS POA ratio 1.61 outside [0.6,1.6] (cloudy=False)
+QC warning: zirpennest/playhouse PVGIS POA ratio 2.36 outside [0.6,1.6] (cloudy=False)
+      site                    array       date  energy_kwh  peak_kw  poa_kwh_m2  temp_cell_max  pvgis_poa_kwh_m2 qc_clipped  qc_ratio
+zirpennest   pv_array_south_primary 2025-12-12    8.628245 1.678707    1.839596      33.722015          1.149747       True  2.307362
+zirpennest pv_array_south_secondary 2025-12-12    1.406380 0.282728    1.025266      19.668980          0.640791       True  1.613060
+zirpennest   pv_array_north_primary 2025-12-12    1.887852 0.348054    0.420553      14.108189          0.386401        NaN       NaN
+zirpennest pv_array_north_secondary 2025-12-12    1.406380 0.282728    1.025266      19.668980          0.640791       True  1.613060
+zirpennest                solarfarm 2025-12-12    4.662706 0.942658    1.025266      19.668980          0.640791       True  1.613060
+zirpennest                playhouse 2025-12-12    0.819338 0.151768    1.842421      33.175578          1.151513       True  2.362542
+Wrote results to live_results.json
+Published new forecast to MQTT.

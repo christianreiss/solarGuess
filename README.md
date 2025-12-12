@@ -343,7 +343,7 @@ PYTHONPATH=src pytest -q
 
 ## Home Assistant / MQTT integration
 
-After a daily run (write `live_results.json` with your scheduler), publish to Home Assistant using the main CLI:
+After a daily run (writes `json/YYYY-MM-DD.json` by default), publish to Home Assistant using the main CLI:
 
 ```bash
 # simulate + publish (topics only by default)
@@ -352,10 +352,11 @@ PYTHONPATH=src solarguess run \
   --date 2025-12-10 \
   --timestep 15m \
   --format json \
-  --output live_results.json
+  --output json/2025-12-10.json
 
 PYTHONPATH=src solarguess publish-mqtt \
   --config etc/config.yaml \
+  --input json/2025-12-10.json \
   --verify --publish-retries 3 --retry-delay 2 --skip-if-fresh
 ```
 
