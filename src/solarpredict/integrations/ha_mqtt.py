@@ -1,6 +1,6 @@
 """Publish daily forecast JSON to Home Assistant via MQTT with change/freshness guards.
 
-This module reads the JSON file produced by ``cron.sh`` (e.g. ``live_results.json``),
+This module reads the JSON file produced by the simulator/cron wrapper (e.g. ``json/YYYY-MM-DD.json``),
 compares it to the retained state already published on the MQTT broker, and only
 publishes when BOTH of these are true:
 
@@ -9,7 +9,8 @@ publishes when BOTH of these are true:
 
 It also publishes Home Assistant MQTT discovery config for a single sensor that
 exposes the total forecasted energy as the state and attaches the full results
-as attributes. This keeps HA setup hands‑free while avoiding churn on the broker.
+(`meta` + `sites`) as attributes. This keeps HA setup hands‑free while avoiding
+churn on the broker.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ import re
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -248,7 +249,7 @@ class MqttConfig:
     host: str = "localhost"
     port: int = 1883
     username: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[str] = field(default=None, repr=False)
     base_topic: str = "solarguess"
     discovery_prefix: str = "homeassistant"
     keepalive: int = 30
@@ -283,6 +284,55 @@ class PahoBridge:
         if cfg.username:
             self.client.username_pw_set(cfg.username, cfg.password)
         self._loop_running = False
+        self._connect_event = threading.Event()
+        self._connect_rc: int | None = None
+        self._session_depth = 0
+
+        def _reason_code_int(reason_code) -> int:
+            """Return an integer CONNACK code across paho v1/v2 APIs.
+
+            Under paho-mqtt 2.x + callback_api_version=VERSION2, reason_code is a
+            ReasonCode object with a numeric `.value` (0 == success, otherwise error).
+            Under older versions it may be an int already.
+            """
+            if reason_code is None:
+                return 1
+            value = getattr(reason_code, "value", None)
+            if value is not None:
+                try:
+                    return int(value)
+                except Exception:
+                    pass
+            try:
+                return int(reason_code)
+            except Exception:
+                return 1
+
+        def on_connect(client, userdata, flags, reason_code, properties=None):
+            rc = _reason_code_int(reason_code)
+            self._connect_rc = rc
+            self._connect_event.set()
+
+        def on_disconnect(client, userdata, disconnect_flags=None, reason_code=None, properties=None):
+            # paho-mqtt v2 uses: (client, userdata, disconnect_flags, reason_code, properties)
+            # paho-mqtt v1 uses: (client, userdata, rc)
+            # We only need to clear state; accept both signatures.
+            self._connect_event.clear()
+
+        self.client.on_connect = on_connect
+        self.client.on_disconnect = on_disconnect
+
+    def _publish_raw(self, topic: str, body: str, *, retain: bool, qos: int) -> None:
+        self._ensure_connected()
+        info = self.client.publish(topic, body, retain=retain, qos=qos)
+        # When not connected, paho returns MQTT_ERR_NO_CONN without raising.
+        if getattr(info, "rc", None) not in (None, mqtt.MQTT_ERR_SUCCESS):
+            raise RuntimeError(f"MQTT publish failed rc={info.rc} topic={topic}")
+        # For QoS 1/2 this waits for PUBACK/PUBREC. For QoS 0 it returns immediately.
+        if hasattr(info, "wait_for_publish"):
+            ok = info.wait_for_publish(timeout=3.0)
+            if ok is False and qos:
+                raise TimeoutError(f"MQTT publish timeout topic={topic}")
 
     def _connect(self) -> None:
         last_exc: Exception | None = None
@@ -290,7 +340,16 @@ class PahoBridge:
             try:
                 if self.cfg.verbose:
                     print(f"[ha_mqtt] connect attempt {attempt}/{self.cfg.connect_retries} to {self.cfg.host}:{self.cfg.port}")
-                self.client.connect(self.cfg.host, self.cfg.port, keepalive=self.cfg.keepalive)
+                self._connect_event.clear()
+                self._connect_rc = None
+                rc = self.client.connect(self.cfg.host, self.cfg.port, keepalive=self.cfg.keepalive)
+                if rc != mqtt.MQTT_ERR_SUCCESS:
+                    raise RuntimeError(f"MQTT connect() failed rc={rc}")
+                # Wait for CONNACK so auth errors don't look like success.
+                if not self._connect_event.wait(timeout=5.0):
+                    raise TimeoutError("MQTT connect timeout (no CONNACK)")
+                if self._connect_rc not in (0, None):
+                    raise RuntimeError(f"MQTT connect refused rc={self._connect_rc}")
                 return
             except Exception as exc:  # pragma: no cover - exercised via live broker
                 last_exc = exc
@@ -301,32 +360,38 @@ class PahoBridge:
             raise last_exc
 
     def _ensure_connected(self) -> None:
-        if not self.client.is_connected():
-            self._connect()
         if not self._loop_running:
             self.client.loop_start()
             self._loop_running = True
+        if not self.client.is_connected():
+            self._connect()
 
     def _disconnect(self) -> None:
+        # Graceful ordering per paho docs: disconnect first, then stop the loop.
+        if self.client.is_connected():
+            self.client.disconnect()
         if self._loop_running:
             self.client.loop_stop()
             self._loop_running = False
-        if self.client.is_connected():
-            self.client.disconnect()
 
     @contextmanager
     def session(self):
         """Connect once, keep loop running, and cleanly disconnect afterward."""
-        self._ensure_connected()
+        self._session_depth += 1
+        if self._session_depth == 1:
+            self._ensure_connected()
         try:
-            yield
+            yield self
         finally:
-            self._disconnect()
+            self._session_depth = max(0, self._session_depth - 1)
+            if self._session_depth == 0:
+                self._disconnect()
 
     def get_retained_json(self, topic: str, timeout: float = 3.0) -> Optional[Dict]:
         """Subscribe and return retained JSON if present, else None."""
         payload: dict | None = None
         event = threading.Event()
+        prev_on_message = self.client.on_message
 
         def on_message(client, userdata, msg):
             nonlocal payload
@@ -341,7 +406,9 @@ class PahoBridge:
         self._ensure_connected()
         self.client.subscribe(topic)
         event.wait(timeout)
-        self._disconnect()
+        self.client.on_message = prev_on_message
+        if self._session_depth == 0:
+            self._disconnect()
         if self.cfg.verbose:
             print(f"[ha_mqtt] retained {topic}: {'found' if payload is not None else 'missing'}")
         return payload
@@ -350,6 +417,7 @@ class PahoBridge:
         """Subscribe and return retained payload as text if present, else None."""
         payload: str | None = None
         event = threading.Event()
+        prev_on_message = self.client.on_message
 
         def on_message(client, userdata, msg):
             nonlocal payload
@@ -360,7 +428,9 @@ class PahoBridge:
         self._ensure_connected()
         self.client.subscribe(topic)
         event.wait(timeout)
-        self._disconnect()
+        self.client.on_message = prev_on_message
+        if self._session_depth == 0:
+            self._disconnect()
         if self.cfg.verbose:
             print(f"[ha_mqtt] retained text {topic}: {'found' if payload is not None else 'missing'}")
         return payload
@@ -369,10 +439,7 @@ class PahoBridge:
         if self.cfg.verbose:
             size = len(json.dumps(payload).encode("utf-8"))
             print(f"[ha_mqtt] publish topic={topic} retain={retain} qos={qos} bytes={size}")
-        self._ensure_connected()
-        self.client.publish(topic, json.dumps(payload), retain=retain, qos=qos)
-        # Give the network loop a moment to flush.
-        time.sleep(0.05)
+        self._publish_raw(topic, json.dumps(payload), retain=retain, qos=qos)
 
     def publish_value(self, topic: str, payload: Any, retain: bool = True, qos: int = 1):
         body: str
@@ -385,18 +452,14 @@ class PahoBridge:
         if self.cfg.verbose:
             size = len(body.encode("utf-8"))
             print(f"[ha_mqtt] publish value topic={topic} retain={retain} qos={qos} bytes={size}")
-        self._ensure_connected()
-        self.client.publish(topic, body, retain=retain, qos=qos)
-        time.sleep(0.05)
+        self._publish_raw(topic, body, retain=retain, qos=qos)
 
     def publish_availability(self, available: bool) -> None:
         payload = "online" if available else "offline"
         topic = f"{self.cfg.base_topic}/availability"
         if self.cfg.verbose:
             print(f"[ha_mqtt] publish availability {payload} -> {topic}")
-        self._ensure_connected()
-        self.client.publish(topic, payload, retain=True, qos=1)
-        time.sleep(0.05)
+        self._publish_raw(topic, payload, retain=True, qos=1)
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +481,8 @@ def build_discovery_config(cfg: MqttConfig) -> Dict[str, Any]:
         "dev_cla": "energy",
         "stat_cla": "measurement",
         "json_attr_t": topics["state"],
-        "json_attr_tpl": "{{ value_json.sites | tojson }}",
+        # Keep meta visible in HA (forecast date + generated_at are critical for debugging "stuck" sensors).
+        "json_attr_tpl": "{{ value_json | tojson }}",
         "dev": {
             "name": "SolarGuess",
             "ids": [cfg.base_topic],
@@ -461,6 +525,7 @@ def _verify_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any])
     expected = {t: str(v) if v is not None else "" for t, v in topics_to_check}
     received: dict[str, str | None] = {t: None for t, _ in topics_to_check}
     event = threading.Event()
+    prev_on_message = bridge.client.on_message
 
     def on_message(client, userdata, msg):
         if msg.topic in received:
@@ -475,7 +540,9 @@ def _verify_topics(cfg: MqttConfig, bridge: PahoBridge, payload: Dict[str, Any])
 
     # Wait bounded for all expected retained messages.
     event.wait(timeout=3.0)
-    bridge._disconnect()
+    bridge.client.on_message = prev_on_message
+    if bridge._session_depth == 0:
+        bridge._disconnect()
 
     for topic, exp in expected.items():
         got = received.get(topic)
@@ -668,7 +735,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--discovery-prefix", default=None)
     parser.add_argument("--connect-retries", type=int, default=None, help="MQTT connection retries (default 3)")
     parser.add_argument("--retry-delay", type=float, default=None, help="Delay between retries in seconds")
-    parser.add_argument("--verbose", action="store_true", help="Enable chatty logging")
+    parser.add_argument(
+        "--verbose",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable chatty logging (defaults to mqtt.verbose from config).",
+    )
     parser.add_argument("--force", action="store_true", help="Publish even if unchanged or older")
     parser.add_argument(
         "--no-state",
@@ -677,7 +749,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--publish-topics",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Also publish per-site/array metrics under base topic (retained)",
     )
     return parser.parse_args()
@@ -712,7 +785,16 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
             return _from_env_string(file_cfg[key])
         return default
 
-    input_path = Path(mqtt_cfg.get("input", file_cfg.get("input", args.input)))
+    # CLI should override config when explicitly provided (cron wrapper passes per-day file).
+    # When CLI is left at the default (live_results.json), allow config to define the default input.
+    cli_input_raw = getattr(args, "input", None)
+    cli_input = Path(cli_input_raw) if cli_input_raw is not None else None
+    default_cli_input = Path("live_results.json")
+    if cli_input is not None and cli_input != default_cli_input:
+        input_path = cli_input
+    else:
+        cfg_input = mqtt_cfg.get("input", file_cfg.get("input"))
+        input_path = Path(cfg_input) if cfg_input else (cli_input or default_cli_input)
     publish_state_cfg = bool(mqtt_cfg.get("publish_state", True))
     publish_state = publish_state_cfg and not bool(getattr(args, "no_state", False))
     publish_topics_cfg = bool(choose("publish_topics", mqtt_cfg.get("publish_topics", False)))

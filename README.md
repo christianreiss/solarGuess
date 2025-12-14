@@ -263,6 +263,16 @@ Rules of thumb:
 - `--actual-kwh-today` (or `run.actual_kwh_today`) scales only *future* intervals so cumulative energy up to “now” equals telemetry. Use `--actual-as-of` to pin the split point; we clamp to the simulated date bounds otherwise.
 - Debug emits `actual.adjust.*` events with predicted vs. actual kWh, sample counts, and applied scale for audit trails.
 
+### Empirical scale factor
+
+- `--scale-factor` (or `run.scale_factor`) applies a constant multiplier to DC/AC outputs (`pdc_w`, `pac_w`, `pac_net_w`), plus `energy_kwh` and `peak_kw`. This is a pragmatic calibration knob for systematic bias (weather model, configuration drift, soiling season, etc.).
+- `solarguess ha-compare` prints a suggested multiplier (median actual/pred) and can write a tuned config via `--write-config`.
+
+### Per-array scale factors (auto-tuned from HA)
+
+- `run.array_scale_factors` lets you apply *different* multipliers per array (or per `site/array` pair). This is useful when one subsystem is consistently biased (e.g., a separate inverter, persistent shading, snow, or just wrong nameplate).
+- `solarguess ha-tune` auto-detects groups from your HA export (e.g., `house_north`, `house_south`, `solarfarm_*`, `playhouse_phase_*`), runs historical sims, and writes `run.array_scale_factors` into a tuned config.
+
 ### Open-Meteo composite fallback
 
 - `weather_source: composite` (or `--weather-source composite`) runs Open-Meteo live plus PVGIS TMY. Any NaN or negative irradiance is backfilled from PVGIS, logged via `weather.merge` and `weather.merge_detail` so you can see how often climatology stepped in.
@@ -292,8 +302,11 @@ Rules of thumb:
 
 | Command | Description |
 | --- | --- |
-| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--weather-mode {standard,cloud-scaled}`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
-| `config` | Interactive YAML/JSON scenario builder/editor. Guides you through locations and arrays with validation using the same models as the engine. |
+| `run` | Execute a simulation for a date. Flags: `--config`, `--date`, `--timestep` (`1h`/`15m`), `--weather-label`, `--weather-source {open-meteo,pvgis-tmy,composite}`, `--weather-mode {standard,cloud-scaled}`, `--scale-factor`, `--pvgis-cache-dir`, `--qc-pvgis`, `--debug`, `--format {json,csv}`, `--output`. |
+| `ha-compare` | Compare predicted daily totals against HA history for a single `*_energy_today` sensor. Prints a suggested `run.scale_factor` and optionally writes a tuned config. |
+| `ha-tune` | Auto-train per-array scale factors from an HA export (subsystem sensors). Writes `run.array_scale_factors` into a tuned config. |
+| `publish-mqtt` | Publish a forecast JSON to MQTT/Home Assistant (supports retained state, discovery, verify). |
+| `config` | Disabled (legacy). |
 
 All CLI code lives in `src/solarpredict/cli.py` (Typer-based). Weather provider defaults to Open-Meteo but the CLI factory (`default_weather_provider`) makes dependency injection easy for tests. Install exposes `solarguess` (preferred) and `solarpredict` console scripts.
 
@@ -341,6 +354,63 @@ PYTHONPATH=src pytest -q
 
 ---
 
+## Comparing Against Home Assistant History
+
+If you have a Home Assistant export of daily max values for `*_energy_today` sensors
+(example shape: `pv_data_2025.json`), you can compare predicted daily totals against
+actual production:
+
+```bash
+PYTHONPATH=src solarguess ha-compare \
+  --config etc/config.yaml \
+  --ha pv_data_2025.json \
+  --entity sensor.total_pv_energy_today \
+  --start 2025-09-15 \
+  --end 2025-12-12 \
+  --weather-source open-meteo \
+  --output /tmp/ha_compare.csv
+```
+
+To write a tuned config that applies the suggested scale factor:
+
+```bash
+PYTHONPATH=src solarguess ha-compare \
+  --config etc/config.yaml \
+  --ha pv_data_2025.json \
+  --entity sensor.total_pv_energy_today \
+  --start 2025-09-15 \
+  --end 2025-12-12 \
+  --weather-source open-meteo \
+  --write-config etc/config.tuned.yaml
+```
+
+To auto-train per-array scale factors (uses subsystem sensors when available):
+
+```bash
+PYTHONPATH=src solarguess ha-tune \
+  --config etc/config.yaml \
+  --ha pv_data_2025.json \
+  --start 2025-09-15 \
+  --end 2025-12-12 \
+  --weather-source open-meteo \
+  --write-config etc/config.tuned.yaml
+```
+
+If you already have a debug JSONL containing `stage=weather.raw` (e.g., from a prior run),
+you can train without network by passing:
+
+```bash
+PYTHONPATH=src solarguess ha-tune \
+  --config etc/config.yaml \
+  --ha pv_data_2025.json \
+  --start 2025-09-15 \
+  --end 2025-12-12 \
+  --weather-debug tmp_ha_compare_openmeteo.debug.jsonl \
+  --write-config etc/config.tuned.yaml
+```
+
+---
+
 ## Home Assistant / MQTT integration
 
 After a daily run (writes `json/YYYY-MM-DD.json` by default), publish to Home Assistant using the main CLI:
@@ -370,9 +440,11 @@ and then publishes that same file to MQTT.
 ./guess.sh 2025-12-12   # explicit date (YYYY-MM-DD)
 ```
 
+- If `etc/config.tuned.yaml` exists, `guess.sh` uses it by default (override via `CONFIG=etc/config.yaml ./guess.sh`).
 - Publishes to `solarguess/forecast` and `solarguess/availability` with retained messages.
-- Discovery payload registers `sensor.solarguess_forecast` whose state is `total_energy_kwh`; attributes mirror the per-site/array breakdown.
+- Discovery payload registers `sensor.solarguess_forecast` whose state is `meta.total_energy_kwh`; attributes include the full payload (`meta` + `sites`) so you can see `meta.date` and `meta.generated_at` in HA.
 - Publishing only proceeds when the local `generated_at` is newer *and* the payload changed (prevents timestamp churn).
+- `guess.sh` runs `publish-mqtt` with `--verify` and retries by default (set `MQTT_VERIFY=0` to disable).
 - Safety guard: discovery/state must travel together. If you set `publish_state: false`, also set `publish_discovery: false`; otherwise the CLI will refuse `--publish-topics` because HA would reference an unwritten state topic.
 - Recovery procedure for stuck entities:
 

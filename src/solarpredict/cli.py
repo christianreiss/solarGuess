@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
 import typer
@@ -22,11 +22,14 @@ from solarpredict.core.config import ConfigError, load_scenario
 from solarpredict.core import config as config_mod
 from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector, build_debug_collector, JsonDebugWriter
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
-from solarpredict.engine.simulate import apply_actual_adjustment, simulate_day
+from solarpredict.calibration.ha_tune import auto_calibration_groups, build_prefetched_weather_from_debug_jsonl
+from solarpredict.engine.simulate import apply_actual_adjustment, apply_array_scale_factors, apply_output_scale, simulate_day
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
+from solarpredict.weather.prefetched import PrefetchedWeatherProvider
 from solarpredict.integrations import ha_mqtt
+from solarpredict.integrations.ha_export import HaDailyMaxExport
 
 __version__ = "0.1.0"
 
@@ -37,6 +40,18 @@ def default_weather_provider(debug) -> OpenMeteoWeatherProvider:
     """Factory separated for easy monkeypatching in tests."""
 
     return OpenMeteoWeatherProvider(debug=debug)
+
+
+def _unwrap_typer_default(value):
+    """When calling Typer commands as plain functions, defaults are OptionInfo.
+
+    Tests (and some scripts) call these command functions directly; unwrap the
+    declared default so regular Python invocation behaves sanely.
+    """
+
+    if isinstance(value, typer.models.OptionInfo):
+        return value.default
+    return value
 
 
 def _exit_with_error(msg: str) -> None:
@@ -180,6 +195,11 @@ def run(
         None,
         help="Weather processing mode: 'standard' (use provider irradiance) or 'cloud-scaled' (clear-sky scaled by cloud cover). Defaults to run.weather_mode or 'standard'.",
     ),
+    scale_factor: Optional[float] = typer.Option(
+        None,
+        "--scale-factor",
+        help="Optional constant scaling applied to DC/AC outputs (empirical calibration knob). Defaults to run.scale_factor or 1.0.",
+    ),
     iam_model: Optional[str] = typer.Option(
         None,
         help="Incidence angle modifier model (ashrae). If unset, defaults to array iam_model when provided.",
@@ -297,6 +317,37 @@ def run(
     # Resolve weather_mode with config fallback.
     effective_weather_mode = weather_mode or run_section.get("weather_mode") or "standard"
     weather_mode = effective_weather_mode.lower()
+
+    # Optional global output scaling (calibration).
+    scale_factor = _unwrap_typer_default(scale_factor)
+    cfg_scale = run_section.get("scale_factor") if run_section else None
+    effective_scale = scale_factor if scale_factor is not None else cfg_scale
+    if effective_scale is None:
+        effective_scale = 1.0
+    try:
+        effective_scale = float(effective_scale)
+    except Exception:
+        _exit_with_error("scale_factor must be numeric")
+    if effective_scale <= 0:
+        _exit_with_error("scale_factor must be > 0")
+
+    # Optional per-array scale factors (fine-grained calibration).
+    raw_array_scales = run_section.get("array_scale_factors") if isinstance(run_section, dict) else None
+    if raw_array_scales is None:
+        raw_array_scales = {}
+    if not isinstance(raw_array_scales, dict):
+        _exit_with_error("run.array_scale_factors must be a mapping of array_id (or site/array) -> scale")
+    array_scale_factors: dict[str, float] = {}
+    for k, v in raw_array_scales.items():
+        key = str(k)
+        try:
+            fval = float(v)
+        except Exception:
+            _exit_with_error(f"run.array_scale_factors[{key!r}] must be numeric")
+        if fval <= 0:
+            _exit_with_error(f"run.array_scale_factors[{key!r}] must be > 0")
+        array_scale_factors[key] = fval
+
     weather_source = weather_source.lower()
     if weather_source == "open-meteo":
         # Open-Meteo forecast API only supports ~16 days ahead and (depending on model) ~92 days back via past_days.
@@ -372,6 +423,12 @@ def run(
         iam_model=iam_model,
         iam_coefficient=iam_coefficient,
     )
+
+    if effective_scale != 1.0:
+        result = apply_output_scale(result, effective_scale, debug=debug_collector)
+
+    if array_scale_factors:
+        result = apply_array_scale_factors(result, array_scale_factors, debug=debug_collector)
 
     # Optional actual adjustment
     actual_cfg = run_section.get("actual_kwh_today") if run_section else None
@@ -543,6 +600,7 @@ def run(
                 "date": date,
                 "timestep": effective_timestep,
                 "provider": weather_source,
+                "scale_factor": effective_scale,
                 "total_energy_kwh": round(sum(s["total_energy_kwh"] for s in sites_list), 3) if sites_list else 0,
                 "site_count": len(sites_list),
                 "array_count": sum(len(s["arrays"]) for s in sites_list),
@@ -583,6 +641,510 @@ def run(
         if isinstance(debug_collector, JsonDebugWriter):
             debug_collector.finalize()
         typer.echo(f"Debug events -> {debug}")
+
+
+@app.command("ha-compare")
+def ha_compare(
+    config: Path = typer.Option(..., "--config", help="Scenario config YAML (same as run)."),
+    ha_export: Path = typer.Option(..., "--ha", help="Home Assistant daily-max export JSON."),
+    entity_id: str = typer.Option("sensor.total_pv_energy_today", "--entity", help="HA entity_id to compare against."),
+    start: Optional[str] = typer.Option(None, help="Start date YYYY-MM-DD (defaults to earliest in export)."),
+    end: Optional[str] = typer.Option(None, help="End date YYYY-MM-DD (defaults to latest in export)."),
+    timestep: str = typer.Option("1h", help="Simulation timestep (e.g., 1h, 15m)."),
+    weather_label: str = typer.Option("end", help="Meaning of timestamps: end/start/center (must match run)."),
+    weather_source: str = typer.Option(
+        "open-meteo",
+        help="Weather provider: open-meteo (recent history), pvgis-tmy (climatology), or composite.",
+    ),
+    weather_mode: Optional[str] = typer.Option(None, help="Weather processing mode: standard or cloud-scaled."),
+    scale_factor: Optional[float] = typer.Option(
+        None,
+        "--scale-factor",
+        help="Optional constant scaling applied to DC/AC outputs when computing pred_kwh. Defaults to run.scale_factor or 1.0.",
+    ),
+    min_actual_kwh: float = typer.Option(
+        1.0,
+        "--min-actual-kwh",
+        help="Ignore days with actual_kwh below this threshold when computing suggested scale.",
+    ),
+    min_pred_kwh: float = typer.Option(
+        1.0,
+        "--min-pred-kwh",
+        help="Ignore days with pred_kwh below this threshold when computing suggested scale.",
+    ),
+    write_config: Optional[Path] = typer.Option(
+        None,
+        "--write-config",
+        help="Write a copy of --config with run.scale_factor set to the suggested value (YAML/JSON based on extension).",
+    ),
+    out: Optional[Path] = typer.Option(None, "--output", help="Write CSV to this path (default: just print)."),
+    debug: Optional[Path] = typer.Option(None, "--debug", help="Write debug JSONL/JSON here."),
+):
+    """Compare forecast daily totals against Home Assistant historical production."""
+
+    debug_collector = build_debug_collector(debug) if debug else NullDebugCollector()
+    raw_cfg = None
+    try:
+        raw_cfg = config_mod._load_raw(config)  # type: ignore[attr-defined] - internal helper, matches run()
+    except Exception:
+        raw_cfg = None
+    scenario = load_scenario(config)
+    run_section = raw_cfg.get("run", {}) if isinstance(raw_cfg, dict) else {}
+    scale_factor = _unwrap_typer_default(scale_factor)
+    cfg_scale = run_section.get("scale_factor") if run_section else None
+    effective_scale = scale_factor if scale_factor is not None else cfg_scale
+    if effective_scale is None:
+        effective_scale = 1.0
+    try:
+        effective_scale = float(effective_scale)
+    except Exception:
+        _exit_with_error("scale_factor must be numeric")
+    if effective_scale <= 0:
+        _exit_with_error("scale_factor must be > 0")
+
+    raw_array_scales = run_section.get("array_scale_factors") if isinstance(run_section, dict) else None
+    if raw_array_scales is None:
+        raw_array_scales = {}
+    if not isinstance(raw_array_scales, dict):
+        _exit_with_error("run.array_scale_factors must be a mapping of array_id (or site/array) -> scale")
+    array_scale_factors: dict[str, float] = {}
+    for k, v in raw_array_scales.items():
+        key = str(k)
+        try:
+            fval = float(v)
+        except Exception:
+            _exit_with_error(f"run.array_scale_factors[{key!r}] must be numeric")
+        if fval <= 0:
+            _exit_with_error(f"run.array_scale_factors[{key!r}] must be > 0")
+        array_scale_factors[key] = fval
+
+    export = HaDailyMaxExport.from_path(ha_export, debug=debug_collector)
+    df = export.to_frame(entities=[entity_id], debug=debug_collector)
+    if df.empty:
+        _exit_with_error(f"No rows for entity_id {entity_id} in {ha_export}")
+
+    try:
+        start_d = dt.date.fromisoformat(start) if start else df["day"].min()
+        end_d = dt.date.fromisoformat(end) if end else df["day"].max()
+    except ValueError:
+        _exit_with_error("start/end must be YYYY-MM-DD")
+    if start_d > end_d:
+        _exit_with_error("start must be <= end")
+
+    source = (weather_source or "open-meteo").lower()
+    effective_weather_mode = (weather_mode or "standard").lower()
+    locations = [
+        {"id": str(site.id), "lat": float(site.location.lat), "lon": float(site.location.lon), "tz": str(site.location.tz)}
+        for site in scenario.sites
+    ]
+
+    # Prefetch weather once for the whole window to avoid N network calls.
+    window_start = start_d.isoformat()
+    window_end = (end_d + dt.timedelta(days=1)).isoformat()
+
+    if source == "open-meteo":
+        raw_provider = default_weather_provider(debug=debug_collector)
+        prefetched = raw_provider.get_forecast(locations, start=window_start, end=window_end, timestep=timestep)
+        provider = PrefetchedWeatherProvider(prefetched)
+    elif source == "pvgis-tmy":
+        # PVGIS returns a full TMY year; cache_dir keeps the (lat,lon) request deterministic and fast.
+        raw_provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=".cache/pvgis")
+        prefetched = raw_provider.get_forecast(locations, start=window_start, end=window_end, timestep="1h")
+        provider = PrefetchedWeatherProvider(prefetched)
+    elif source == "composite":
+        primary_raw = default_weather_provider(debug=debug_collector)
+        secondary_raw = PVGISWeatherProvider(debug=debug_collector, cache_dir=".cache/pvgis")
+        primary_pref = PrefetchedWeatherProvider(primary_raw.get_forecast(locations, start=window_start, end=window_end, timestep=timestep))
+        secondary_pref = PrefetchedWeatherProvider(secondary_raw.get_forecast(locations, start=window_start, end=window_end, timestep="1h"))
+        provider = CompositeWeatherProvider(primary=primary_pref, secondary=secondary_pref, debug=debug_collector)
+    else:
+        _exit_with_error(f"Unsupported weather_source '{weather_source}'")
+
+    day_to_actual = {r["day"]: float(r["energy_kwh"]) for r in df.to_dict(orient="records")}
+    rows: List[Dict[str, Any]] = []
+
+    min_actual_kwh = float(_unwrap_typer_default(min_actual_kwh))
+    min_pred_kwh = float(_unwrap_typer_default(min_pred_kwh))
+
+    cur = start_d
+    while cur <= end_d:
+        actual = day_to_actual.get(cur)
+        if actual is None:
+            cur += dt.timedelta(days=1)
+            continue
+
+        pred_kwh: float | None
+        err: str | None
+        try:
+            res = simulate_day(
+                scenario,
+                date=cur,
+                timestep=timestep,
+                weather_provider=provider,
+                debug=debug_collector,
+                weather_label=weather_label,
+                weather_mode=effective_weather_mode,
+                iam_model=None,
+                iam_coefficient=None,
+            )
+            if effective_scale != 1.0:
+                res = apply_output_scale(res, effective_scale, debug=debug_collector)
+            if array_scale_factors:
+                res = apply_array_scale_factors(res, array_scale_factors, debug=debug_collector)
+            pred_kwh = float(res.daily["energy_kwh"].sum()) if not res.daily.empty else 0.0
+            err = None
+        except Exception as exc:
+            pred_kwh = None
+            err = str(exc)
+            if len(err) > 300:
+                err = err[:300] + "…"
+
+        ratio = (actual / pred_kwh) if (pred_kwh is not None and pred_kwh > 0) else None
+        rows.append(
+            {
+                "date": cur.isoformat(),
+                "actual_kwh": actual,
+                "pred_kwh": pred_kwh,
+                "ratio_actual_over_pred": ratio,
+                "error": err,
+            }
+        )
+        debug_collector.emit(
+            "ha.compare.row",
+            {"date": cur.isoformat(), "entity_id": entity_id, "actual_kwh": actual, "pred_kwh": pred_kwh, "error": err},
+            ts=cur.isoformat(),
+        )
+        cur += dt.timedelta(days=1)
+
+    out_df = pd.DataFrame(rows)
+    ok = out_df[(out_df["pred_kwh"].notna()) & (out_df["pred_kwh"] >= min_pred_kwh) & (out_df["actual_kwh"] >= min_actual_kwh)]
+    suggested_multiplier = float(ok["ratio_actual_over_pred"].median()) if not ok.empty else None
+    suggested_new_scale = (effective_scale * suggested_multiplier) if suggested_multiplier is not None else None
+    debug_collector.emit(
+        "ha.compare.summary",
+        {
+            "entity_id": entity_id,
+            "rows": int(len(out_df)),
+            "ok_rows": int(len(ok)),
+            "scale_factor": effective_scale,
+            "median_actual_over_pred": suggested_multiplier,
+            "suggested_scale_factor": suggested_new_scale,
+        },
+        ts=end_d.isoformat(),
+    )
+
+    typer.echo(out_df.tail(20).to_string(index=False))
+    if suggested_multiplier is not None:
+        typer.echo(f"Suggested multiplier (median actual/pred): {suggested_multiplier:.3f}")
+        typer.echo(f"Suggested run.scale_factor: {suggested_new_scale:.3f} (current {effective_scale:.3f})")
+        if write_config is not None:
+            cfg_out = dict(raw_cfg) if isinstance(raw_cfg, dict) else {}
+            run_out = cfg_out.get("run") or {}
+            if not isinstance(run_out, dict):
+                run_out = {}
+            run_out["scale_factor"] = float(round(float(suggested_new_scale), 6))
+            cfg_out["run"] = run_out
+            if write_config.suffix.lower() == ".json":
+                write_config.write_text(json.dumps(cfg_out, indent=2))
+            else:
+                write_config.write_text(yaml.safe_dump(cfg_out, sort_keys=False))
+            typer.echo(f"Wrote tuned config to {write_config}")
+    if out is not None:
+        out.write_text(out_df.to_csv(index=False))
+        typer.echo(f"Wrote {len(out_df)} rows to {out}")
+    if debug and isinstance(debug_collector, JsonDebugWriter):
+        debug_collector.finalize()
+
+
+@app.command("ha-tune")
+def ha_tune(
+    config: Path = typer.Option(..., "--config", help="Scenario config YAML/JSON (same as run)."),
+    ha_export: Path = typer.Option(..., "--ha", help="Home Assistant daily-max export JSON."),
+    start: Optional[str] = typer.Option(None, help="Start date YYYY-MM-DD (default: last ~92 days)."),
+    end: Optional[str] = typer.Option(None, help="End date YYYY-MM-DD (default: latest in export)."),
+    timestep: str = typer.Option("1h", help="Simulation timestep (e.g., 1h, 15m)."),
+    weather_label: str = typer.Option("end", help="Meaning of timestamps: end/start/center (must match run)."),
+    weather_source: str = typer.Option(
+        "open-meteo",
+        help="Weather provider: open-meteo (recent history), pvgis-tmy (climatology), or composite.",
+    ),
+    weather_mode: Optional[str] = typer.Option(None, help="Weather processing mode: standard or cloud-scaled."),
+    weather_debug: Optional[Path] = typer.Option(
+        None,
+        "--weather-debug",
+        help="Optional debug JSONL containing stage=weather.raw (used to build a PrefetchedWeatherProvider and avoid network).",
+    ),
+    min_actual_kwh: float = typer.Option(
+        1.0,
+        "--min-actual-kwh",
+        help="Ignore group-days with actual_kwh below this threshold when fitting scales.",
+    ),
+    min_pred_kwh: float = typer.Option(
+        1.0,
+        "--min-pred-kwh",
+        help="Ignore group-days with pred_kwh below this threshold when fitting scales.",
+    ),
+    write_config: Optional[Path] = typer.Option(
+        None,
+        "--write-config",
+        help="Write a copy of --config with run.array_scale_factors set (YAML/JSON based on extension).",
+    ),
+    out: Optional[Path] = typer.Option(None, "--output", help="Write per-day training CSV to this path (optional)."),
+    debug: Optional[Path] = typer.Option(None, "--debug", help="Write debug JSONL/JSON here."),
+):
+    """Train per-array scale factors from Home Assistant subsystem sensors.
+
+    This command is designed for "do it for me" operations:
+    - auto-detect sensor groups (e.g. house_north vs pv_array_north_*)
+    - run simulations over a historical window
+    - compute median(actual/pred) per group
+    - write run.array_scale_factors into a tuned config
+    """
+
+    debug_collector = build_debug_collector(debug) if debug else NullDebugCollector()
+    raw_cfg = None
+    try:
+        raw_cfg = config_mod._load_raw(config)  # type: ignore[attr-defined]
+    except Exception:
+        raw_cfg = None
+    scenario = load_scenario(config)
+    run_section = raw_cfg.get("run", {}) if isinstance(raw_cfg, dict) else {}
+
+    export = HaDailyMaxExport.from_path(ha_export, debug=debug_collector)
+    ha_df = export.to_frame(entities=None, debug=debug_collector)
+    if ha_df.empty:
+        _exit_with_error(f"No rows in {ha_export}")
+
+    try:
+        end_d = dt.date.fromisoformat(end) if end else ha_df["day"].max()
+    except ValueError:
+        _exit_with_error("end must be YYYY-MM-DD")
+    try:
+        if start:
+            start_d = dt.date.fromisoformat(start)
+        else:
+            # Default to last ~92 days to stay within Open-Meteo lookback.
+            earliest = ha_df["day"].min()
+            start_d = max(earliest, end_d - dt.timedelta(days=92))
+    except ValueError:
+        _exit_with_error("start must be YYYY-MM-DD")
+    if start_d > end_d:
+        _exit_with_error("start must be <= end")
+
+    # Auto-map HA entities to arrays.
+    groups = auto_calibration_groups(scenario, export.sensors, include_total=True)
+    train_groups = [g for g in groups if g.name != "total_pv"]
+    if not train_groups:
+        _exit_with_error("No calibration groups detected; export sensors did not match any array ids")
+
+    # Ensure arrays are not assigned to multiple groups (except total_pv which is excluded above).
+    assigned: dict[Tuple[str, str], str] = {}
+    for g in train_groups:
+        for key in g.arrays:
+            if key in assigned and assigned[key] != g.name:
+                _exit_with_error(f"Array {key[0]}/{key[1]} matched multiple groups: {assigned[key]} and {g.name}")
+            assigned[key] = g.name
+
+    effective_weather_mode = (weather_mode or run_section.get("weather_mode") or "standard").lower()
+    source = (weather_source or "open-meteo").lower()
+
+    locations = [
+        {"id": str(site.id), "lat": float(site.location.lat), "lon": float(site.location.lon), "tz": str(site.location.tz)}
+        for site in scenario.sites
+    ]
+    window_start = start_d.isoformat()
+    window_end = (end_d + dt.timedelta(days=1)).isoformat()
+
+    if weather_debug is not None:
+        prefetched = build_prefetched_weather_from_debug_jsonl(
+            weather_debug,
+            site_ids=[str(site.id) for site in scenario.sites],
+            debug=debug_collector,
+        )
+        provider = PrefetchedWeatherProvider(prefetched)
+        debug_collector.emit(
+            "calibration.weather_provider",
+            {"source": "debug-jsonl", "path": str(weather_debug), "window_start": window_start, "window_end": window_end},
+            ts=window_start,
+        )
+    else:
+        # Prefetch weather once for the whole window to avoid N network calls.
+        if source == "open-meteo":
+            raw_provider = default_weather_provider(debug=debug_collector)
+            prefetched = raw_provider.get_forecast(locations, start=window_start, end=window_end, timestep=timestep)
+            provider = PrefetchedWeatherProvider(prefetched)
+        elif source == "pvgis-tmy":
+            raw_provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=".cache/pvgis")
+            prefetched = raw_provider.get_forecast(locations, start=window_start, end=window_end, timestep="1h")
+            provider = PrefetchedWeatherProvider(prefetched)
+        elif source == "composite":
+            primary_raw = default_weather_provider(debug=debug_collector)
+            secondary_raw = PVGISWeatherProvider(debug=debug_collector, cache_dir=".cache/pvgis")
+            primary_pref = PrefetchedWeatherProvider(primary_raw.get_forecast(locations, start=window_start, end=window_end, timestep=timestep))
+            secondary_pref = PrefetchedWeatherProvider(secondary_raw.get_forecast(locations, start=window_start, end=window_end, timestep="1h"))
+            provider = CompositeWeatherProvider(primary=primary_pref, secondary=secondary_pref, debug=debug_collector)
+        else:
+            _exit_with_error(f"Unsupported weather_source '{weather_source}'")
+
+    # Build a day -> entity -> energy map for quick lookups.
+    day_entity: dict[dt.date, dict[str, float]] = {}
+    for r in ha_df.to_dict(orient="records"):
+        day = r.get("day")
+        ent = r.get("entity_id")
+        val = r.get("energy_kwh")
+        if isinstance(day, dt.date) and isinstance(ent, str):
+            try:
+                day_entity.setdefault(day, {})[ent] = float(val)
+            except Exception:
+                continue
+
+    rows: list[dict[str, Any]] = []
+    min_actual_kwh = float(_unwrap_typer_default(min_actual_kwh))
+    min_pred_kwh = float(_unwrap_typer_default(min_pred_kwh))
+
+    cur = start_d
+    while cur <= end_d:
+        try:
+            res = simulate_day(
+                scenario,
+                date=cur,
+                timestep=timestep,
+                weather_provider=provider,
+                debug=debug_collector,
+                weather_label=weather_label,
+                weather_mode=effective_weather_mode,
+                iam_model=None,
+                iam_coefficient=None,
+            )
+        except Exception as exc:
+            # Still emit rows for visibility; group-level rows get error set.
+            for g in train_groups:
+                rows.append(
+                    {
+                        "date": cur.isoformat(),
+                        "group": g.name,
+                        "actual_kwh": None,
+                        "pred_kwh": None,
+                        "ratio_actual_over_pred": None,
+                        "error": str(exc)[:300],
+                    }
+                )
+            cur += dt.timedelta(days=1)
+            continue
+
+        pred_map: dict[Tuple[str, str], float] = {}
+        if res.daily is not None and not res.daily.empty:
+            for _, r in res.daily.iterrows():
+                try:
+                    pred_map[(str(r["site"]), str(r["array"]))] = float(r["energy_kwh"])
+                except Exception:
+                    continue
+
+        day_actual = day_entity.get(cur, {})
+        for g in train_groups:
+            actual_vals = []
+            missing = []
+            for ent in g.ha_entities:
+                if ent in day_actual:
+                    actual_vals.append(float(day_actual[ent]))
+                else:
+                    missing.append(ent)
+            if missing:
+                # Skip silently; we don't want partial subsystem totals.
+                continue
+            actual_kwh = float(sum(actual_vals))
+            pred_kwh = float(sum(pred_map.get(a, 0.0) for a in g.arrays))
+            ratio = (actual_kwh / pred_kwh) if pred_kwh > 0 else None
+            rows.append(
+                {
+                    "date": cur.isoformat(),
+                    "group": g.name,
+                    "actual_kwh": actual_kwh,
+                    "pred_kwh": pred_kwh,
+                    "ratio_actual_over_pred": ratio,
+                    "error": None,
+                }
+            )
+        cur += dt.timedelta(days=1)
+
+    out_df = pd.DataFrame(rows)
+    if out_df.empty:
+        _exit_with_error("No training rows produced (missing sensors or empty simulation output)")
+
+    # Fit one scale per group.
+    suggested: dict[str, float] = {}
+    group_rows = []
+    for g in train_groups:
+        gdf = out_df[(out_df["group"] == g.name) & (out_df["error"].isna())]
+        ok = gdf[
+            (gdf["pred_kwh"].notna())
+            & (gdf["actual_kwh"].notna())
+            & (gdf["pred_kwh"] >= min_pred_kwh)
+            & (gdf["actual_kwh"] >= min_actual_kwh)
+            & (gdf["ratio_actual_over_pred"].notna())
+        ]
+        scale = float(ok["ratio_actual_over_pred"].median()) if not ok.empty else None
+        if scale is not None:
+            suggested[g.name] = scale
+        group_rows.append(
+            {
+                "group": g.name,
+                "ha_entities": ",".join(sorted(g.ha_entities)),
+                "arrays": ",".join(f"{s}/{a}" for s, a in g.arrays),
+                "rows": int(len(gdf)),
+                "ok_rows": int(len(ok)),
+                "median_actual_over_pred": scale,
+            }
+        )
+
+    summary_df = pd.DataFrame(group_rows).sort_values("group")
+    typer.echo(summary_df.to_string(index=False))
+
+    if not suggested:
+        _exit_with_error("No groups produced a scale factor (too few ok rows); try lowering min thresholds")
+
+    # Build run.array_scale_factors mapping by applying each group's scale to its arrays.
+    array_scale_factors: dict[str, float] = {}
+    for g in train_groups:
+        scale = suggested.get(g.name)
+        if scale is None:
+            continue
+        for site_id, array_id in g.arrays:
+            key = f"{site_id}/{array_id}"
+            array_scale_factors[key] = float(round(scale, 6))
+
+    debug_collector.emit(
+        "ha.tune.summary",
+        {
+            "groups": int(len(train_groups)),
+            "scales": int(len(array_scale_factors)),
+            "start": start_d.isoformat(),
+            "end": end_d.isoformat(),
+        },
+        ts=end_d.isoformat(),
+    )
+
+    if write_config is not None:
+        cfg_out = dict(raw_cfg) if isinstance(raw_cfg, dict) else {}
+        run_out = cfg_out.get("run") or {}
+        if not isinstance(run_out, dict):
+            run_out = {}
+        # Ensure we don't accidentally double-scale if the input config already had scale_factor.
+        run_out["scale_factor"] = 1.0
+        run_out["array_scale_factors"] = array_scale_factors
+        cfg_out["run"] = run_out
+        if write_config.suffix.lower() == ".json":
+            write_config.write_text(json.dumps(cfg_out, indent=2))
+        else:
+            write_config.write_text(yaml.safe_dump(cfg_out, sort_keys=False))
+        typer.echo(f"Wrote tuned config to {write_config}")
+
+    if out is not None:
+        out.write_text(out_df.to_csv(index=False))
+        typer.echo(f"Wrote {len(out_df)} rows to {out}")
+
+    if debug and isinstance(debug_collector, JsonDebugWriter):
+        debug_collector.finalize()
 
 
 def _list_sites(sites: List[Site]) -> None:
@@ -656,7 +1218,12 @@ def publish_mqtt(
     discovery_prefix: str = typer.Option(None, help="Override discovery prefix"),
     connect_retries: int = typer.Option(None, help="MQTT connection retries"),
     retry_delay: float = typer.Option(None, help="Delay between retries in seconds"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable chatty logging"),
+    verbose: Optional[bool] = typer.Option(
+        None,
+        "--verbose/--no-verbose",
+        help="Enable chatty logging (defaults to mqtt.verbose from config).",
+        show_default=False,
+    ),
     force: bool = typer.Option(False, "--force", help="Publish even if unchanged or older"),
     no_state: bool = typer.Option(False, "--no-state", help="Skip retained state blob"),
     publish_topics: Optional[bool] = typer.Option(
@@ -693,7 +1260,8 @@ def publish_mqtt(
             "publish_topics": publish_topics,
             "verify": verify,
             "publish_retries": publish_retries,
-            "publish_discovery": not no_discovery,
+            # Let config decide by default; CLI can force-disable with --no-discovery.
+            "publish_discovery": None if not no_discovery else False,
             "skip_if_fresh": skip_if_fresh,
         },
     )()

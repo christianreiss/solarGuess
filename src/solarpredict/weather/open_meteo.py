@@ -99,7 +99,33 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         index = pd.to_datetime(time_values)
         if index.tz is None:
             if timezone:
-                index = index.tz_localize(timezone)
+                # Handle DST transitions robustly:
+                # - fall-back hour is ambiguous (e.g. 2025-10-26 02:00 in Europe/Berlin)
+                # - spring-forward hour can be nonexistent
+                #
+                # We prefer 'infer' so monotonic series spanning DST localize cleanly.
+                # Some providers omit the repeated fall-back hour; in that case 'infer'
+                # can fail. We then pick the ambiguous mapping (DST vs standard) that
+                # yields the smoothest UTC cadence.
+                try:
+                    index = index.tz_localize(timezone, ambiguous="infer", nonexistent="shift_forward")
+                except Exception as exc:
+                    if type(exc).__name__ != "AmbiguousTimeError":
+                        raise
+                    candidates = []
+                    for amb in (True, False):
+                        try:
+                            idx = index.tz_localize(timezone, ambiguous=amb, nonexistent="shift_forward")
+                            deltas = idx.tz_convert("UTC").to_series().diff().dt.total_seconds().dropna()
+                            median = float(deltas.median()) if not deltas.empty else 0.0
+                            score = float((deltas - median).abs().sum()) if not deltas.empty else 0.0
+                            candidates.append((score, idx))
+                        except Exception:
+                            continue
+                    if not candidates:
+                        raise
+                    candidates.sort(key=lambda t: t[0])
+                    index = candidates[0][1]
             else:
                 index = index.tz_localize("UTC")
         elif timezone:

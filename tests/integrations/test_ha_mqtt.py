@@ -5,6 +5,7 @@ import pytest
 
 from solarpredict.integrations.ha_mqtt import (
     MqttConfig,
+    PahoBridge,
     _canonical_payload,
     _hash_payload,
     _iter_topics,
@@ -251,7 +252,7 @@ def test_merge_config_prefers_nested_mqtt(tmp_path: Path):
     })()
 
     input_path, cfg = _merge_config(args)
-    assert input_path.name == "live.json"
+    assert input_path.name == "cli.json"
     assert cfg.host == "mq.example"
     assert cfg.port == 1883
     assert cfg.username == "u"
@@ -263,6 +264,54 @@ def test_merge_config_prefers_nested_mqtt(tmp_path: Path):
     assert cfg.verbose is True
     assert cfg.publish_state is True
     assert cfg.publish_topics is True
+
+
+def test_merge_config_uses_config_input_when_cli_default(tmp_path: Path):
+    cfg_path = sample_config(tmp_path)
+    args = type("Args", (), {
+        "config": cfg_path,
+        # Simulate "no --input": argparse/typer default.
+        "input": Path("live_results.json"),
+        "mqtt_host": None,
+        "mqtt_port": None,
+        "mqtt_username": None,
+        "mqtt_password": None,
+        "base_topic": None,
+        "discovery_prefix": None,
+        "connect_retries": None,
+        "retry_delay": None,
+        "verbose": None,
+        "no_state": None,
+        "publish_topics": None,
+        "publish_discovery": None,
+    })()
+
+    input_path, _ = _merge_config(args)
+    assert input_path.name == "live.json"
+
+
+def test_paho_disconnect_callback_accepts_v2_signature():
+    """Regression: paho-mqtt 2.x calls on_disconnect with 5 args under VERSION2."""
+    bridge = PahoBridge(MqttConfig())
+    # (client, userdata, disconnect_flags, reason_code, properties)
+    bridge.client.on_disconnect(bridge.client, None, None, 0, None)
+
+
+def test_paho_connect_callback_parses_reason_code_value():
+    """Regression: paho-mqtt 2.x passes a ReasonCode object (not int-castable)."""
+
+    class DummyReasonCode:
+        def __init__(self, value: int):
+            self.value = value
+
+        def __repr__(self) -> str:
+            return f"DummyReasonCode(value={self.value})"
+
+    bridge = PahoBridge(MqttConfig())
+    assert bridge._connect_event.is_set() is False
+    bridge.client.on_connect(bridge.client, None, None, DummyReasonCode(0), None)
+    assert bridge._connect_event.is_set() is True
+    assert bridge._connect_rc == 0
 
 
 def test_merge_config_accepts_legacy_flat_keys(tmp_path: Path):
@@ -279,7 +328,7 @@ publish_topics: true
 
     args = type("Args", (), {
         "config": path,
-        "input": Path("cli.json"),
+        "input": Path("live_results.json"),
         "mqtt_host": None,
         "mqtt_port": None,
         "mqtt_username": None,

@@ -84,7 +84,7 @@ class PVArray:
         if self.horizon_deg is not None:
             if len(self.horizon_deg) < 12:
                 raise ValidationError("horizon_deg must have at least 12 values (30° bins or finer)")
-            cleaned = []
+            cleaned: list[float] = []
             for val in self.horizon_deg:
                 try:
                     fval = float(val)
@@ -93,6 +93,7 @@ class PVArray:
                 if not (0.0 <= fval <= 90.0):
                     raise ValidationError("horizon_deg values must be between 0 and 90 degrees")
                 cleaned.append(fval)
+            object.__setattr__(self, "horizon_deg", cleaned)
         if self.iam_model is not None:
             allowed = {"ashrae"}
             model = self.iam_model.lower()
@@ -100,7 +101,6 @@ class PVArray:
                 raise ValidationError(f"iam_model must be one of {sorted(allowed)}")
             if self.iam_coefficient is not None and self.iam_coefficient < 0:
                 raise ValidationError("iam_coefficient must be non-negative when provided")
-            object.__setattr__(self, "horizon_deg", cleaned)
 
 
 @dataclass(frozen=True)

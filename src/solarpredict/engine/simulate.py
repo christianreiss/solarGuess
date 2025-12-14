@@ -270,6 +270,151 @@ def apply_actual_adjustment(
     return SimulationResult(daily=adjusted_daily, timeseries=adjusted_timeseries)
 
 
+def apply_output_scale(
+    result: SimulationResult,
+    scale_factor: float,
+    debug: DebugCollector,
+) -> SimulationResult:
+    """Scale DC/AC outputs by a constant factor.
+
+    Intended as an empirical calibration knob (e.g., to correct systematic
+    bias vs. measured production). This scales:
+    - per-interval: pdc_w, pac_w, pac_net_w (when present)
+    - daily: energy_kwh, peak_kw (when present)
+
+    It does NOT scale weather-driven quantities like POA or temperatures.
+    """
+
+    try:
+        scale = float(scale_factor)
+    except Exception as exc:
+        raise ValueError("scale_factor must be numeric") from exc
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("scale_factor must be > 0 and finite")
+
+    if not isinstance(result, SimulationResult):
+        # Defensive: allow duck-typed in tests
+        result = SimulationResult(daily=getattr(result, "daily", pd.DataFrame()), timeseries=getattr(result, "timeseries", {}))
+
+    if scale == 1.0:
+        debug.emit("calibration.scale_factor", {"scale_factor": scale, "applied": False}, ts=None)
+        return result
+
+    daily = result.daily.copy() if isinstance(result.daily, pd.DataFrame) else pd.DataFrame()
+    for col in ("energy_kwh", "peak_kw"):
+        if col in daily.columns:
+            daily[col] = daily[col].astype(float) * scale
+
+    scaled_timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
+    for key, df in (result.timeseries or {}).items():
+        if df is None:
+            scaled_timeseries[key] = df
+            continue
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            scaled_timeseries[key] = df
+            continue
+        df_scaled = df.copy()
+        for col in ("pdc_w", "pac_w", "pac_net_w"):
+            if col in df_scaled.columns:
+                df_scaled[col] = df_scaled[col].astype(float) * scale
+        scaled_timeseries[key] = df_scaled
+
+    meta = dict(result.meta) if isinstance(result.meta, dict) else None
+    if meta is None:
+        meta = {}
+    meta["scale_factor"] = scale
+
+    debug.emit("calibration.scale_factor", {"scale_factor": scale, "applied": True}, ts=None)
+    return SimulationResult(daily=daily, timeseries=scaled_timeseries, weather_raw=result.weather_raw, meta=meta)
+
+
+def apply_array_scale_factors(
+    result: SimulationResult,
+    array_scale_factors: dict[str, float],
+    debug: DebugCollector,
+) -> SimulationResult:
+    """Scale DC/AC outputs by array-specific factors.
+
+    This is a finer-grained version of :func:`apply_output_scale` intended for
+    systems where one array (or a subset of arrays) has a persistent bias vs.
+    telemetry.
+
+    ``array_scale_factors`` is a mapping where keys can be:
+    - ``"<site_id>/<array_id>"`` (most specific, recommended for multi-site configs)
+    - ``"<array_id>"`` (applies to any site that has that array id)
+
+    Scaling applies to:
+    - per-interval: pdc_w, pac_w, pac_net_w
+    - daily: energy_kwh, peak_kw
+
+    It does NOT scale POA irradiance or temperatures.
+    """
+
+    if not array_scale_factors:
+        debug.emit("calibration.array_scale_factors", {"rows": 0, "applied": False}, ts=None)
+        return result
+
+    if not isinstance(array_scale_factors, dict):
+        raise ValueError("array_scale_factors must be a dict mapping array_id (or site/array) to scale")
+
+    def _lookup(site_id: str, array_id: str) -> tuple[float, str | None]:
+        key_site = f"{site_id}/{array_id}"
+        if key_site in array_scale_factors:
+            return float(array_scale_factors[key_site]), key_site
+        if array_id in array_scale_factors:
+            return float(array_scale_factors[array_id]), array_id
+        return 1.0, None
+
+    scaled_timeseries: Dict[Tuple[str, str], pd.DataFrame] = {}
+    applied_rows: list[dict[str, object]] = []
+
+    for (site_id, array_id), df in (result.timeseries or {}).items():
+        scale, matched_key = _lookup(site_id, array_id)
+        if not np.isfinite(scale) or scale <= 0:
+            raise ValueError(f"array_scale_factors[{matched_key or array_id!r}] must be > 0 and finite")
+
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty or scale == 1.0:
+            scaled_timeseries[(site_id, array_id)] = df
+            if matched_key is not None:
+                applied_rows.append({"site": site_id, "array": array_id, "scale_factor": scale, "matched_key": matched_key})
+            continue
+
+        df_scaled = df.copy()
+        for col in ("pdc_w", "pac_w", "pac_net_w"):
+            if col in df_scaled.columns:
+                df_scaled[col] = df_scaled[col].astype(float) * scale
+        scaled_timeseries[(site_id, array_id)] = df_scaled
+        applied_rows.append({"site": site_id, "array": array_id, "scale_factor": scale, "matched_key": matched_key})
+
+    daily = result.daily.copy() if isinstance(result.daily, pd.DataFrame) else pd.DataFrame()
+    if not daily.empty and {"site", "array"}.issubset(daily.columns):
+        def _row_scale(r) -> float:
+            site_id = str(r.get("site"))
+            array_id = str(r.get("array"))
+            scale, matched_key = _lookup(site_id, array_id)
+            if matched_key is not None and not any(
+                (a["site"] == site_id and a["array"] == array_id) for a in applied_rows
+            ):
+                applied_rows.append({"site": site_id, "array": array_id, "scale_factor": scale, "matched_key": matched_key})
+            return scale
+
+        scales = daily.apply(_row_scale, axis=1)
+        for col in ("energy_kwh", "peak_kw"):
+            if col in daily.columns:
+                daily[col] = daily[col].astype(float) * scales.astype(float)
+
+    # Emit a compact summary for audits; do not dump full mapping unconditionally.
+    debug.emit(
+        "calibration.array_scale_factors",
+        {"rows": int(len(applied_rows)), "applied": True, "unique_keys": int(len(set(a["matched_key"] for a in applied_rows if a.get("matched_key"))))},
+        ts=None,
+    )
+    for row in applied_rows:
+        debug.emit("calibration.array_scale_factor", row, ts=None, site=row.get("site"), array=row.get("array"))
+
+    return SimulationResult(daily=daily, timeseries=scaled_timeseries, weather_raw=result.weather_raw, meta=result.meta)
+
+
 def _daterange_bounds(date: dt.date) -> tuple[str, str]:
     return date.isoformat(), (date + dt.timedelta(days=1)).isoformat()
 

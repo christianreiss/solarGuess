@@ -186,6 +186,55 @@ def test_pvarray_validation():
     assert ok.horizon_deg == [0.0] * 12
 
 
+def test_pvarray_iam_model_without_horizon_ok():
+    arr = PVArray(
+        id="arr",
+        tilt_deg=10,
+        azimuth_deg=0,
+        pdc0_w=1000,
+        gamma_pdc=-0.003,
+        dc_ac_ratio=1.2,
+        eta_inv_nom=0.96,
+        losses_percent=14,
+        temp_model="noct",
+        iam_model="ashrae",
+        iam_coefficient=0.05,
+        horizon_deg=None,
+    )
+    assert arr.iam_model == "ashrae"
+    assert arr.horizon_deg is None
+
+
+def test_pvarray_iam_model_validation():
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
+            losses_percent=14,
+            temp_model="noct",
+            iam_model="bogus",
+        )
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
+            losses_percent=14,
+            temp_model="noct",
+            iam_model="ashrae",
+            iam_coefficient=-1,
+        )
+
+
 def test_site_and_scenario_validation():
     location = Location(id="loc", lat=1, lon=1)
     array = PVArray(

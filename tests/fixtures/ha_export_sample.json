@@ -1,0 +1,21 @@
+{
+  "year": 2025,
+  "timezone": "SYSTEM",
+  "generated_at": "2025-12-12T17:16:44",
+  "db": "homeassistant",
+  "sensors": [
+    "sensor.total_pv_energy_today",
+    "sensor.house_north_energy_today"
+  ],
+  "data": {
+    "sensor.total_pv_energy_today": [
+      { "day": "2025-12-11", "max": 10.52 },
+      { "day": "2025-12-12", "max": 9.24 }
+    ],
+    "sensor.house_north_energy_today": [
+      { "day": "2025-12-11", "max": 0.75 },
+      { "day": "2025-12-12", "max": 0.75 }
+    ]
+  }
+}
+

@@ -13,8 +13,13 @@ dist/
 .DS_Store
 pytestcache/
 .pytest_cache/
+.cache/
 /etc/config.yaml
+/etc/config.tuned.yaml
+/etc/*.yaml~
 /live_results.json
 /live_debug.jsonl
 /live_results.json.bak.*
+/pv_data_*.json
+/tmp_*
 /json/
