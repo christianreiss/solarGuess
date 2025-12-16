@@ -99,21 +99,18 @@ pip install -e .
             temp_model: close_mount_glass_glass
     ```
 
-2. **Run a forecast.**
+2. **Run a forecast (and optionally publish).**
 
     ```bash
-    PYTHONPATH=src \
-    solarguess run \
-      --config etc/config.yaml \
-      --date 2025-06-01 \
-      --weather-label end \
-      --debug debug.jsonl
+    PYTHONPATH=src solarguess go --date 2025-06-01 --no-publish
     ```
 
-    - `--weather-label end` matches Open-Meteo's backward-averaged timestamps. Switch to `start` if your provider reports forward averages.
-    - Add `--format csv --output results.csv` if you need a spreadsheet-friendly dump.
-    - Want climatology instead of a live forecast? Pass `--weather-source pvgis-tmy` (optionally with `--pvgis-cache-dir .cache/pvgis`) to fetch PVGIS (EU JRC Photovoltaic Geographical Information System) typical-year irradiance for your coordinates.
-    - To sanity-check live forecasts against PVGIS, add `--qc-pvgis` or set `run.qc_pvgis: true` in the config; the CLI will emit `qc.pvgis_compare` debug events so you can diff live vs. typical energy/POA.
+    - `solarguess go` wraps the old `run` + `publish-mqtt` steps in one command. It reads defaults from your config's `run:` and `mqtt:` sections, so `--config`, `--output`, `--debug`, `--input`, etc. no longer need to be repeated.
+    - Use `--publish/--no-publish` to override `mqtt.enable`. When you're ready to wire up MQTT just drop the `--no-publish`.
+    - Need just the simulator? `solarguess run` still exists with the same flags as before, and it now infers `--config`, `--date`, `--output`, `--debug`, `--intervals`, and friends from the config when not provided.
+    - `--weather-label end` matches Open-Meteo's backward-averaged timestamps. Switch to `start` if your provider reports forward averages; set it once under `run.weather_label` to make it the default.
+    - Want climatology instead of a live forecast? Set `run.weather_source: pvgis-tmy` or pass `--weather-source pvgis-tmy` (optionally with `--pvgis-cache-dir .cache/pvgis`) to fetch PVGIS (EU JRC Photovoltaic Geographical Information System) typical-year irradiance for your coordinates.
+    - To sanity-check live forecasts against PVGIS, add `--qc-pvgis` or set `run.qc_pvgis: true`; the CLI will emit `qc.pvgis_compare` debug events so you can diff live vs. typical energy/POA.
 
 3. **Inspect results.** The command prints JSON summary (sites/arrays with `energy_kwh`, `peak_kw`, etc.) and the optional `debug.jsonl` captures every stage for audits.
 
@@ -158,6 +155,37 @@ Rules of thumb:
 - `losses_percent`: 5–14% lumps wiring, mismatch, soiling. Start at 7–10%.
 - `temp_model`: choose from pvlib SAPM table (`open_rack_glass_polymer`, `close_mount_glass_glass`, ...). Config must match exactly.
 - `inverter_group_id`: arrays sharing the same physical inverter go into the same group so clipping is modeled correctly.
+
+---
+
+### Config-driven CLI defaults
+
+`solarguess run`, `go`, and `publish-mqtt` read their defaults from the scenario file so you only need to declare paths and switches once.
+
+- Under `run:` you can set `date`, `timestep`, `format`, `output`, `debug`, `intervals`, `weather_label`, `weather_source`, `weather_mode`, `scale_factor`, `force`, `pvgis_cache_dir`, `qc_pvgis`, and load-window knobs. Paths accept `strftime` tokens such as `%F` so `json/%F.json` turns into `json/2025-12-16.json`.
+- Under `mqtt:` configure `enable`, `input`, `verify`, `force`, `publish_retries`, `retry_delay`, `skip_if_fresh`, `publish_topics`, `publish_discovery`, and broker credentials. `mqtt.enable: true` makes `solarguess go` publish by default; `--publish/--no-publish` overrides it per run.
+
+Example:
+
+```yaml
+run:
+  date: 2025-12-01
+  output: json/%F.json
+  debug: debug/%F.jsonl
+  intervals: intervals/%F.csv
+  weather_label: end
+  weather_source: open-meteo
+
+mqtt:
+  enable: true
+  input: json/%F.json
+  verify: true
+  publish_retries: 3
+  retry_delay: 2
+  skip_if_fresh: true
+```
+
+With that in place `solarguess go --date 2025-12-16` will run + publish using those defaults; leaving `--date` out reverts to `run.date` or today's date.
 
 ---
 
@@ -413,10 +441,9 @@ PYTHONPATH=src solarguess ha-tune \
 
 ## Home Assistant / MQTT integration
 
-After a daily run (writes `json/YYYY-MM-DD.json` by default), publish to Home Assistant using the main CLI:
+`solarguess go` covers the full “simulate + publish” story and is safe for cron jobs because it respects the freshness guard. When you need manual control or want to republish an existing file, run the two commands explicitly:
 
 ```bash
-# simulate + publish (topics only by default)
 PYTHONPATH=src solarguess run \
   --config etc/config.yaml \
   --date 2025-12-10 \
@@ -432,19 +459,18 @@ PYTHONPATH=src solarguess publish-mqtt \
 
 ### Cron-friendly wrapper
 
-For unattended runs, `./guess.sh` computes a per-day output path (supports `run.output: json/%F.json`)
-and then publishes that same file to MQTT.
+`solarguess go` is cron-friendly on its own: it expands `run.output`, honors the skip-if-fresh guard, and publishes based on `mqtt.enable`. The legacy `./guess.sh` shim now just forwards to `go` while keeping the familiar env overrides.
 
 ```bash
 ./guess.sh              # uses today's date
 ./guess.sh 2025-12-12   # explicit date (YYYY-MM-DD)
 ```
 
-- If `etc/config.tuned.yaml` exists, `guess.sh` uses it by default (override via `CONFIG=etc/config.yaml ./guess.sh`).
+- If `etc/config.tuned.yaml` exists, the CLI (and wrapper) uses it by default; override via `--config` or `CONFIG=etc/config.yaml ./guess.sh`.
 - Publishes to `solarguess/forecast` and `solarguess/availability` with retained messages.
 - Discovery payload registers `sensor.solarguess_forecast` whose state is `meta.total_energy_kwh`; attributes include the full payload (`meta` + `sites`) so you can see `meta.date` and `meta.generated_at` in HA.
 - Publishing only proceeds when the local `generated_at` is newer *and* the payload changed (prevents timestamp churn).
-- `guess.sh` runs `publish-mqtt` with `--verify` and retries by default (set `MQTT_VERIFY=0` to disable).
+- `mqtt.verify`, `mqtt.publish_retries`, and `mqtt.skip_if_fresh` now live in the config. Override per invocation with `--verify/--no-verify`, `--publish-retries`, `--skip-if-fresh`, or env vars (`MQTT_VERIFY`, `MQTT_PUBLISH_RETRIES`, `MQTT_SKIP_IF_FRESH`) if you're calling `guess.sh`.
 - Safety guard: discovery/state must travel together. If you set `publish_state: false`, also set `publish_discovery: false`; otherwise the CLI will refuse `--publish-topics` because HA would reference an unwritten state topic.
 - Recovery procedure for stuck entities:
 

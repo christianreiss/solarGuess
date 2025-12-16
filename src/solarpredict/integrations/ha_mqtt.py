@@ -758,8 +758,15 @@ def _parse_args() -> argparse.Namespace:
 
 def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
     file_cfg: dict[str, Any] = {}
-    if args.config and args.config.exists():
-        file_cfg = yaml.safe_load(args.config.read_text()) or {}
+    cfg_path = getattr(args, "config", None)
+    if isinstance(cfg_path, Path):
+        config_file = cfg_path
+    elif cfg_path is None:
+        config_file = Path("etc/config.yaml")
+    else:
+        config_file = Path(cfg_path)
+    if config_file.exists():
+        file_cfg = yaml.safe_load(config_file.read_text()) or {}
 
     mqtt_cfg = file_cfg.get("mqtt", {}) if isinstance(file_cfg, dict) else {}
 
@@ -788,7 +795,12 @@ def _merge_config(args: argparse.Namespace) -> tuple[Path, MqttConfig]:
     # CLI should override config when explicitly provided (cron wrapper passes per-day file).
     # When CLI is left at the default (live_results.json), allow config to define the default input.
     cli_input_raw = getattr(args, "input", None)
-    cli_input = Path(cli_input_raw) if cli_input_raw is not None else None
+    if isinstance(cli_input_raw, Path):
+        cli_input = cli_input_raw
+    elif cli_input_raw is not None:
+        cli_input = Path(cli_input_raw)
+    else:
+        cli_input = None
     default_cli_input = Path("live_results.json")
     if cli_input is not None and cli_input != default_cli_input:
         input_path = cli_input

@@ -59,6 +59,89 @@ def _exit_with_error(msg: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _default_config_candidates() -> List[Path]:
+    return [Path("etc/config.tuned.yaml"), Path("etc/config.yaml")]
+
+
+def _resolve_config_path(config: Path | None) -> Path:
+    if config is not None:
+        path = Path(config)
+    else:
+        path = None
+        for cand in _default_config_candidates():
+            if cand.exists():
+                path = cand
+                break
+        if path is None:
+            path = _default_config_candidates()[-1]
+    if not path.exists():
+        _exit_with_error(f"Config file {path} not found. Pass --config to specify an explicit file.")
+    return path
+
+
+def _load_raw_config_dict(config_path: Path) -> Dict[str, Any]:
+    try:
+        data = config_mod._load_raw(config_path)  # type: ignore[attr-defined]
+    except ConfigError as exc:
+        _exit_with_error(str(exc))
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _resolve_date(date_value: Optional[str], run_section: Dict[str, Any]) -> dt.date:
+    candidate = date_value or run_section.get("date")
+    if candidate:
+        try:
+            return dt.date.fromisoformat(str(candidate))
+        except ValueError:
+            _exit_with_error("date must be YYYY-MM-DD")
+    return dt.date.today()
+
+
+def _expand_date_template(value: str, date_obj: dt.date) -> str:
+    try:
+        return date_obj.strftime(value)
+    except Exception:
+        return value.replace("%F", date_obj.isoformat())
+
+
+def _config_path(run_section: Dict[str, Any], key: str, date_obj: dt.date) -> Optional[Path]:
+    val = run_section.get(key)
+    if val is None:
+        return None
+    text = str(val)
+    if "%" in text:
+        text = _expand_date_template(text, date_obj)
+    return Path(text)
+
+
+def _determine_output_path(
+    cli_output: Optional[Path],
+    run_section: Dict[str, Any],
+    fmt: str,
+    date_obj: dt.date,
+) -> Path:
+    if cli_output is not None:
+        return cli_output
+    cfg_path = _config_path(run_section, "output", date_obj)
+    if cfg_path is not None:
+        return cfg_path
+    if fmt.lower() == "json":
+        return Path("json") / f"{date_obj.isoformat()}.json"
+    return Path(f"results.{fmt}")
+
+
+def _coerce_bool(value: Optional[bool], cfg_value: Any, default: bool = False) -> bool:
+    if value is not None:
+        return bool(value)
+    if cfg_value is None:
+        return default
+    if isinstance(cfg_value, str):
+        return cfg_value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(cfg_value)
+
+
 def _write_scenario(path: Path, scenario: Scenario) -> None:
     _exit_with_error("Scenario writer removed with CLI config. Re-add if needed.")
 
@@ -177,19 +260,26 @@ def _load_existing(path: Path) -> List[Site]:
 
 @app.command()
 def run(
-    config: Path = typer.Option(Path("etc/config.yaml"), exists=True, readable=True, help="Scenario YAML/JSON file"),
-    date: str = typer.Option(..., help="Target date (YYYY-MM-DD)"),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="Scenario YAML/JSON file. Defaults to etc/config.tuned.yaml then etc/config.yaml.",
+    ),
+    date: Optional[str] = typer.Option(
+        None,
+        help="Target date (YYYY-MM-DD). Defaults to run.date in config or today.",
+    ),
     timestep: Optional[str] = typer.Option(
         None,
         help="Forecast timestep, e.g. 1h or 15m. Defaults to run.timestep in config, else 1h.",
     ),
-    weather_label: str = typer.Option(
-        "end",
-        help="Meaning of weather timestamps: 'end' (backward-averaged, default), 'start' (forward-averaged), or 'center'.",
+    weather_label: Optional[str] = typer.Option(
+        None,
+        help="Meaning of weather timestamps: 'end' (backward-averaged), 'start' (forward-averaged), or 'center'. Defaults to run.weather_label or 'end'.",
     ),
-    weather_source: str = typer.Option(
-        "open-meteo",
-        help="Weather provider: 'open-meteo' (default), 'pvgis-tmy' (typical meteorological year), or 'composite' (open-meteo primary with PVGIS fallback).",
+    weather_source: Optional[str] = typer.Option(
+        None,
+        help="Weather provider: 'open-meteo', 'pvgis-tmy', or 'composite'. Defaults to run.weather_source or 'open-meteo'.",
     ),
     weather_mode: Optional[str] = typer.Option(
         None,
@@ -208,9 +298,9 @@ def run(
         None,
         help="Coefficient for IAM model (e.g., ASHRAE b0).",
     ),
-    output_shape: str = typer.Option(
-        "hierarchical",
-        help="JSON output shape when --format=json: 'hierarchical' (meta+sites, default) or 'records' (flat list).",
+    output_shape: Optional[str] = typer.Option(
+        None,
+        help="JSON output shape when --format=json: 'hierarchical' (meta+sites) or 'records' (flat list). Defaults to run.output_shape or 'hierarchical'.",
     ),
     pvgis_cache_dir: Optional[Path] = typer.Option(
         None,
@@ -244,48 +334,82 @@ def run(
         None,
         help="Optional energy requirement (Wh) a window must satisfy to qualify.",
     ),
-    debug: Optional[Path] = typer.Option(None, help="Write debug JSONL/JSON to this path (json = single document)"),
-    format: str = typer.Option("json", "--format", "-f", help="Output format: json or csv"),
+    debug: Optional[Path] = typer.Option(
+        None,
+        help="Write debug JSONL/JSON to this path (json = single document). Defaults to run.debug.",
+    ),
+    format: Optional[str] = typer.Option(
+        None,
+        "--format",
+        "-f",
+        help="Output format: json or csv. Defaults to run.format or json.",
+    ),
     output: Optional[Path] = typer.Option(
         None,
-        help="Output file path. Default: json/YYYY-MM-DD.json (when --format=json), else results.<format>.",
+        help="Output file path. Defaults to run.output (supports strftime tokens) or json/YYYY-MM-DD.json.",
     ),
     intervals: Optional[Path] = typer.Option(
         None,
-        help="Optional per-interval output (.json or .csv) with pac_net_w, poa_global, interval_h, wh_period, wh_cum",
+        help="Optional per-interval output (.json or .csv) with pac_net_w, poa_global, interval_h, wh_period, wh_cum. Defaults to run.intervals when set.",
     ),
-    force: bool = typer.Option(False, "--force", help="Run even if output already generated today"),
+    force: Optional[bool] = typer.Option(
+        None,
+        "--force/--no-force",
+        help="Run even if output already generated today (defaults to run.force or false).",
+        show_default=False,
+    ),
 ):
     """Run a daily simulation for the provided scenario."""
 
-    raw_cfg = None
-    try:
-        raw_cfg = config_mod._load_raw(config)  # type: ignore[attr-defined] - internal helper is fine here
-        scenario = load_scenario(config)
-    except ConfigError as exc:
-        _exit_with_error(str(exc))
+    timestep = _unwrap_typer_default(timestep)
+    weather_label = _unwrap_typer_default(weather_label)
+    weather_source = _unwrap_typer_default(weather_source)
+    weather_mode = _unwrap_typer_default(weather_mode)
+    scale_factor = _unwrap_typer_default(scale_factor)
+    iam_model = _unwrap_typer_default(iam_model)
+    iam_coefficient = _unwrap_typer_default(iam_coefficient)
+    output_shape = _unwrap_typer_default(output_shape)
+    pvgis_cache_dir = _unwrap_typer_default(pvgis_cache_dir)
+    qc_pvgis = _unwrap_typer_default(qc_pvgis)
+    actual_kwh_today = _unwrap_typer_default(actual_kwh_today)
+    actual_limit_suppress = _unwrap_typer_default(actual_limit_suppress)
+    actual_as_of = _unwrap_typer_default(actual_as_of)
+    base_load_w = _unwrap_typer_default(base_load_w)
+    min_duration_min = _unwrap_typer_default(min_duration_min)
+    required_wh = _unwrap_typer_default(required_wh)
+    debug = _unwrap_typer_default(debug)
+    format = _unwrap_typer_default(format)
+    output = _unwrap_typer_default(output)
+    intervals = _unwrap_typer_default(intervals)
+    force = _unwrap_typer_default(force)
 
-    try:
-        date_obj = dt.date.fromisoformat(date)
-    except ValueError:
-        _exit_with_error("date must be YYYY-MM-DD")
+    config_path = _resolve_config_path(config)
+    raw_cfg = _load_raw_config_dict(config_path)
+    run_section = raw_cfg.get("run", {}) if isinstance(raw_cfg, dict) else {}
+    scenario = load_scenario(config_path)
 
-    debug_collector = build_debug_collector(debug) if debug else NullDebugCollector()
-    if output is not None:
-        output_path = output
-    else:
-        # Default to a date-keyed JSON time series on disk so cron runs naturally
-        # accumulate historical forecasts without extra scripting.
-        #
-        # Note: this default is only used when the user does not explicitly pass
-        # --output and the config does not set run.output (handled by wrapper scripts).
-        if format.lower() == "json":
-            output_path = Path("json") / f"{date_obj.isoformat()}.json"
-        else:
-            output_path = Path(f"results.{format}")
+    date_obj = _resolve_date(date, run_section)
+
+    fmt_value = format or run_section.get("format") or "json"
+    fmt = str(fmt_value).lower()
+
+    output_path = _determine_output_path(output, run_section, fmt, date_obj)
+    debug_path = debug if debug else _config_path(run_section, "debug", date_obj)
+    intervals_path = intervals if intervals else _config_path(run_section, "intervals", date_obj)
+    pvgis_cache_dir = pvgis_cache_dir or _config_path(run_section, "pvgis_cache_dir", date_obj)
+
+    weather_label = (weather_label or run_section.get("weather_label") or "end").lower()
+    weather_source = (weather_source or run_section.get("weather_source") or "open-meteo").lower()
+    effective_weather_mode = (weather_mode or run_section.get("weather_mode") or "standard").lower()
+
+    debug_collector = build_debug_collector(debug_path) if debug_path else NullDebugCollector()
+    debug_target = debug_path
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not force and output_path.exists():
+    force_flag = _coerce_bool(force, run_section.get("force"), default=False)
+    target_date_str = date_obj.isoformat()
+    if not force_flag and output_path.exists():
         existing = None
         try:
             existing = json.loads(output_path.read_text())
@@ -304,19 +428,15 @@ def run(
                 payload_date = existing.get("date")
         # Flat list has no generated_at; skip guard.
 
-        if generated_at and payload_date == date:
+        if generated_at and payload_date == target_date_str:
             gen_dt = dt.datetime.fromisoformat(generated_at)
             if gen_dt.date() == dt.date.today():
                 typer.echo(
                     f"Output {output_path} for {payload_date} already generated today ({generated_at}); use --force to rerun."
                 )
-                raise typer.Exit(code=0)
+                return output_path
 
-    run_section = raw_cfg.get("run", {}) if raw_cfg else {}
-
-    # Resolve weather_mode with config fallback.
-    effective_weather_mode = weather_mode or run_section.get("weather_mode") or "standard"
-    weather_mode = effective_weather_mode.lower()
+    weather_mode = effective_weather_mode
 
     # Optional global output scaling (calibration).
     scale_factor = _unwrap_typer_default(scale_factor)
@@ -568,7 +688,6 @@ def run(
             debug=debug_collector,
         )
 
-    fmt = format.lower()
     if fmt == "json":
         serializable = daily.copy()
         for col in serializable.columns:
@@ -577,9 +696,10 @@ def run(
 
         records_payload = serializable.to_dict(orient="records")
 
-        if output_shape.lower() == "records":
+        effective_output_shape = (output_shape or run_section.get("output_shape") or "hierarchical").lower()
+        if effective_output_shape == "records":
             payload = records_payload if load_windows is None else {"results": records_payload, "load_windows": load_windows}
-        elif output_shape.lower() == "hierarchical":
+        elif effective_output_shape == "hierarchical":
             # Build hierarchical shape with meta/sites to avoid shell-script postprocessing.
             sites: Dict[str, Dict[str, Any]] = {}
             for rec in records_payload:
@@ -597,7 +717,7 @@ def run(
 
             meta = {
                 "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-                "date": date,
+                "date": target_date_str,
                 "timestep": effective_timestep,
                 "provider": weather_source,
                 "scale_factor": effective_scale,
@@ -618,8 +738,8 @@ def run(
         _exit_with_error("format must be json or csv")
 
     # Optional per-interval export
-    if intervals:
-        intervals_path = intervals
+    if intervals_path:
+        intervals_path.parent.mkdir(parents=True, exist_ok=True)
         intervals_fmt = intervals_path.suffix.lower().lstrip(".")
         intervals_df = _build_intervals_df(result.timeseries)
         if intervals_fmt == "json":
@@ -636,11 +756,137 @@ def run(
 
     typer.echo(daily.to_string(index=False))
     typer.echo(f"Wrote results to {output_path}")
-    if debug:
+    if debug_target:
         # flush single-JSON collector if used
         if isinstance(debug_collector, JsonDebugWriter):
             debug_collector.finalize()
-        typer.echo(f"Debug events -> {debug}")
+        typer.echo(f"Debug events -> {debug_target}")
+
+    return output_path
+
+
+@app.command()
+def go(
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="Scenario config. Defaults to etc/config.tuned.yaml then etc/config.yaml.",
+    ),
+    date: Optional[str] = typer.Option(
+        None,
+        help="Target date (YYYY-MM-DD). Defaults to run.date or today.",
+    ),
+    publish: Optional[bool] = typer.Option(
+        None,
+        "--publish/--no-publish",
+        help="Publish to MQTT after running. Defaults to mqtt.enable.",
+        show_default=False,
+    ),
+    force: Optional[bool] = typer.Option(
+        None,
+        "--force/--no-force",
+        help="Force the simulation even if today's output already exists (defaults to run.force).",
+        show_default=False,
+    ),
+    mqtt_force: Optional[bool] = typer.Option(
+        None,
+        "--mqtt-force/--no-mqtt-force",
+        help="Force MQTT publish even if unchanged/older (defaults to mqtt.force).",
+        show_default=False,
+    ),
+    verify: Optional[bool] = typer.Option(
+        None,
+        "--verify/--no-verify",
+        help="MQTT verification toggle. Defaults to mqtt.verify (false when unset).",
+        show_default=False,
+    ),
+    publish_retries: Optional[int] = typer.Option(
+        None,
+        "--publish-retries",
+        help="Retry MQTT publish N times (defaults to mqtt.publish_retries or 1).",
+    ),
+    retry_delay: Optional[float] = typer.Option(
+        None,
+        "--retry-delay",
+        help="Delay between MQTT publish retries in seconds (defaults to mqtt.retry_delay or cfg retry_delay).",
+    ),
+    skip_if_fresh: Optional[bool] = typer.Option(
+        None,
+        "--skip-if-fresh/--no-skip-if-fresh",
+        help="Skip MQTT publish when broker already has same/newer payload (defaults to mqtt.skip_if_fresh).",
+        show_default=False,
+    ),
+):
+    """Run the forecast and (optionally) publish to MQTT using config defaults."""
+
+    publish = _unwrap_typer_default(publish)
+    force = _unwrap_typer_default(force)
+    mqtt_force = _unwrap_typer_default(mqtt_force)
+    verify = _unwrap_typer_default(verify)
+    publish_retries = _unwrap_typer_default(publish_retries)
+    retry_delay = _unwrap_typer_default(retry_delay)
+    skip_if_fresh = _unwrap_typer_default(skip_if_fresh)
+
+    config_path = _resolve_config_path(config)
+    raw_cfg = _load_raw_config_dict(config_path)
+    run_section = raw_cfg.get("run", {}) if isinstance(raw_cfg, dict) else {}
+    mqtt_section = raw_cfg.get("mqtt", {}) if isinstance(raw_cfg, dict) else {}
+
+    date_obj = _resolve_date(date, run_section)
+    target_date = date_obj.isoformat()
+
+    output_path = run(
+        config=config_path,
+        date=target_date,
+        timestep=None,
+        weather_label=None,
+        weather_source=None,
+        weather_mode=None,
+        scale_factor=None,
+        iam_model=None,
+        iam_coefficient=None,
+        output_shape=None,
+        pvgis_cache_dir=None,
+        qc_pvgis=None,
+        actual_kwh_today=None,
+        actual_limit_suppress=None,
+        actual_as_of=None,
+        base_load_w=None,
+        min_duration_min=None,
+        required_wh=None,
+        debug=None,
+        format=None,
+        output=None,
+        intervals=None,
+        force=force,
+    )
+
+    publish_flag = _coerce_bool(publish, (mqtt_section or {}).get("enable"), default=False)
+    if not publish_flag:
+        typer.echo("MQTT publish disabled via config or flag; skipping.")
+        return output_path
+
+    verify_flag = _coerce_bool(verify, mqtt_section.get("verify"), default=False)
+    mqtt_force_flag = _coerce_bool(mqtt_force, mqtt_section.get("force"), default=False)
+    skip_if_fresh_flag = _coerce_bool(skip_if_fresh, mqtt_section.get("skip_if_fresh"), default=False)
+    publish_retries_val = publish_retries if publish_retries is not None else mqtt_section.get("publish_retries")
+    if publish_retries_val is None:
+        publish_retries_val = 1
+    publish_retries_val = int(publish_retries_val)
+    retry_delay_val = retry_delay if retry_delay is not None else mqtt_section.get("retry_delay")
+    retry_delay_val = float(retry_delay_val) if retry_delay_val is not None else None
+
+    publish_mqtt(
+        config=config_path,
+        input=output_path,
+        retry_delay=retry_delay_val,
+        force=mqtt_force_flag,
+        verify=verify_flag,
+        publish_retries=publish_retries_val,
+        skip_if_fresh=skip_if_fresh_flag,
+    )
+
+    return output_path
 
 
 @app.command("ha-compare")
@@ -1208,23 +1454,37 @@ def version_callback(
 
 @app.command("publish-mqtt")
 def publish_mqtt(
-    config: Path = typer.Option(Path("etc/config.yaml"), help="Combined scenario + mqtt config"),
-    input: Path = typer.Option(Path("live_results.json"), "--input", "-i", help="Forecast JSON produced by cron/run"),
-    mqtt_host: str = typer.Option(None, help="Override MQTT host"),
-    mqtt_port: int = typer.Option(None, help="Override MQTT port"),
-    mqtt_username: str = typer.Option(None, help="Override MQTT username"),
-    mqtt_password: str = typer.Option(None, help="Override MQTT password"),
-    base_topic: str = typer.Option(None, help="Override base topic"),
-    discovery_prefix: str = typer.Option(None, help="Override discovery prefix"),
-    connect_retries: int = typer.Option(None, help="MQTT connection retries"),
-    retry_delay: float = typer.Option(None, help="Delay between retries in seconds"),
+    config: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        help="Combined scenario + mqtt config (defaults to etc/config.tuned.yaml, then etc/config.yaml).",
+    ),
+    input: Optional[Path] = typer.Option(
+        None,
+        "--input",
+        "-i",
+        help="Forecast JSON produced by run/go. Defaults to mqtt.input or run.output.",
+    ),
+    mqtt_host: Optional[str] = typer.Option(None, help="Override MQTT host"),
+    mqtt_port: Optional[int] = typer.Option(None, help="Override MQTT port"),
+    mqtt_username: Optional[str] = typer.Option(None, help="Override MQTT username"),
+    mqtt_password: Optional[str] = typer.Option(None, help="Override MQTT password"),
+    base_topic: Optional[str] = typer.Option(None, help="Override base topic"),
+    discovery_prefix: Optional[str] = typer.Option(None, help="Override discovery prefix"),
+    connect_retries: Optional[int] = typer.Option(None, help="MQTT connection retries"),
+    retry_delay: Optional[float] = typer.Option(None, help="Delay between retries in seconds"),
     verbose: Optional[bool] = typer.Option(
         None,
         "--verbose/--no-verbose",
         help="Enable chatty logging (defaults to mqtt.verbose from config).",
         show_default=False,
     ),
-    force: bool = typer.Option(False, "--force", help="Publish even if unchanged or older"),
+    force: Optional[bool] = typer.Option(
+        None,
+        "--force/--no-force",
+        help="Publish even if unchanged or older (defaults to mqtt.force).",
+        show_default=False,
+    ),
     no_state: bool = typer.Option(False, "--no-state", help="Skip retained state blob"),
     publish_topics: Optional[bool] = typer.Option(
         None,
@@ -1232,19 +1492,62 @@ def publish_mqtt(
         help="Also publish scalar topics (retained). Defaults to config.",
         show_default=False,
     ),
-    verify: bool = typer.Option(False, "--verify", help="Read back retained state and ensure it matches"),
-    publish_retries: int = typer.Option(1, "--publish-retries", help="Retry publish+verify N times on failure"),
+    verify: Optional[bool] = typer.Option(
+        None,
+        "--verify/--no-verify",
+        help="Read back retained state and ensure it matches (defaults to mqtt.verify).",
+        show_default=False,
+    ),
+    publish_retries: Optional[int] = typer.Option(
+        None,
+        "--publish-retries",
+        help="Retry publish+verify N times on failure (defaults to mqtt.publish_retries or 1).",
+    ),
     no_discovery: bool = typer.Option(False, "--no-discovery", help="Skip HA discovery publish"),
-    skip_if_fresh: bool = typer.Option(False, "--skip-if-fresh", help="If broker already has same/newer generated_at, do nothing (state path only)"),
+    skip_if_fresh: Optional[bool] = typer.Option(
+        None,
+        "--skip-if-fresh/--no-skip-if-fresh",
+        help="If broker already has same/newer generated_at, do nothing (defaults to mqtt.skip_if_fresh).",
+        show_default=False,
+    ),
 ):
     """Publish forecast JSON to MQTT using the same config format as the simulator."""
+
+    config = _unwrap_typer_default(config)
+    input = _unwrap_typer_default(input)
+    mqtt_host = _unwrap_typer_default(mqtt_host)
+    mqtt_port = _unwrap_typer_default(mqtt_port)
+    mqtt_username = _unwrap_typer_default(mqtt_username)
+    mqtt_password = _unwrap_typer_default(mqtt_password)
+    base_topic = _unwrap_typer_default(base_topic)
+    discovery_prefix = _unwrap_typer_default(discovery_prefix)
+    connect_retries = _unwrap_typer_default(connect_retries)
+    retry_delay = _unwrap_typer_default(retry_delay)
+    verbose = _unwrap_typer_default(verbose)
+    force = _unwrap_typer_default(force)
+    publish_topics = _unwrap_typer_default(publish_topics)
+    verify = _unwrap_typer_default(verify)
+    publish_retries = _unwrap_typer_default(publish_retries)
+    skip_if_fresh = _unwrap_typer_default(skip_if_fresh)
+
+    config_path = _resolve_config_path(config)
+    raw_cfg = _load_raw_config_dict(config_path)
+    mqtt_section = raw_cfg.get("mqtt", {}) if isinstance(raw_cfg, dict) else {}
+
+    effective_force = _coerce_bool(force, mqtt_section.get("force"), default=False)
+    verify_flag = _coerce_bool(verify, mqtt_section.get("verify"), default=False)
+    skip_if_fresh_flag = _coerce_bool(skip_if_fresh, mqtt_section.get("skip_if_fresh"), default=False)
+    publish_retries_val = publish_retries if publish_retries is not None else mqtt_section.get("publish_retries")
+    if publish_retries_val is None:
+        publish_retries_val = 1
+    publish_retries_val = int(publish_retries_val)
 
     # Reuse argparse-based merger by mimicking the Namespace shape.
     args = type(
         "Args",
         (),
         {
-            "config": config,
+            "config": config_path,
             "input": input,
             "mqtt_host": mqtt_host,
             "mqtt_port": mqtt_port,
@@ -1255,27 +1558,27 @@ def publish_mqtt(
             "connect_retries": connect_retries,
             "retry_delay": retry_delay,
             "verbose": verbose,
-            "force": force,
+            "force": effective_force,
             "no_state": no_state,
             "publish_topics": publish_topics,
-            "verify": verify,
-            "publish_retries": publish_retries,
+            "verify": verify_flag,
+            "publish_retries": publish_retries_val,
             # Let config decide by default; CLI can force-disable with --no-discovery.
             "publish_discovery": None if not no_discovery else False,
-            "skip_if_fresh": skip_if_fresh,
+            "skip_if_fresh": skip_if_fresh_flag,
         },
     )()
 
     input_path, cfg = ha_mqtt._merge_config(args)
-    debug_info = {}
+    debug_info: Dict[str, Any] = {}
     published = ha_mqtt.publish_forecast(
         input_path,
         cfg,
-        force=force,
-        verify=verify,
-        publish_retries=publish_retries,
+        force=effective_force,
+        verify=verify_flag,
+        publish_retries=publish_retries_val,
         retry_delay_sec=args.retry_delay or cfg.retry_delay_sec,
-        skip_if_fresh=skip_if_fresh,
+        skip_if_fresh=skip_if_fresh_flag,
         debug=debug_info,
     )
     if published:
@@ -1284,6 +1587,8 @@ def publish_mqtt(
         typer.echo("No publish needed (unchanged or not newer).")
     if verbose and debug_info:
         typer.echo(f"MQTT debug: {debug_info}")
+
+    return published
 
 
 def main() -> None:  # pragma: no cover - thin wrapper for console_script

@@ -1,9 +1,10 @@
-from pathlib import Path
-import json
 import datetime as dt
+import json
+from pathlib import Path
 
 import pandas as pd
 from typer.testing import CliRunner
+import yaml
 
 from solarpredict import cli
 from solarpredict import cli_utils
@@ -188,6 +189,81 @@ def test_run_force_bypasses_skip(monkeypatch, tmp_path):
     )
     assert res.exit_code == 0, res.stdout
     assert called["simulate"] is True
+
+
+def test_run_uses_config_defaults(monkeypatch, tmp_path):
+    cfg = _write_fixture(tmp_path)
+    data = yaml.safe_load(cfg.read_text())
+    out_template = str(tmp_path / "json/%F.json")
+    debug_template = str(tmp_path / "debug/%F.jsonl")
+    intervals_template = str(tmp_path / "intervals/%F.csv")
+    data["run"] = {
+        "date": "2025-12-03",
+        "output": out_template,
+        "debug": debug_template,
+        "intervals": intervals_template,
+    }
+    cfg.write_text(yaml.safe_dump(data))
+
+    expected_out = Path(out_template.replace("%F", "2025-12-03"))
+    expected_debug = Path(debug_template.replace("%F", "2025-12-03"))
+    expected_intervals = Path(intervals_template.replace("%F", "2025-12-03"))
+
+    def fake_provider(debug):
+        return DummyWeatherProvider()
+
+    monkeypatch.setattr(cli, "default_weather_provider", fake_provider)
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "run",
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert expected_out.exists()
+    assert expected_debug.exists()
+    assert expected_intervals.exists()
+
+
+def test_go_runs_and_publishes(monkeypatch, tmp_path):
+    cfg = _write_fixture(tmp_path)
+    data = yaml.safe_load(cfg.read_text())
+    data["run"] = {"date": "2025-12-04"}
+    data["mqtt"] = {"enable": True, "verify": True, "publish_retries": 4}
+    cfg.write_text(yaml.safe_dump(data))
+
+    called = {}
+    output_path = tmp_path / "json/go.json"
+
+    def fake_run(**kwargs):
+        called["run"] = kwargs
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps({"meta": {"generated_at": "2025-12-04T00:00:00Z", "date": "2025-12-04"}, "sites": []}))
+        return output_path
+
+    def fake_publish(**kwargs):
+        called["publish"] = kwargs
+        return True
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "publish_mqtt", fake_publish)
+
+    res = runner.invoke(
+        cli.app,
+        [
+            "go",
+            "--config",
+            str(cfg),
+        ],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert called["run"]["date"] == "2025-12-04"
+    assert called["publish"]["input"] == output_path
+    assert called["publish"]["verify"] is True
+    assert called["publish"]["publish_retries"] == 4
 
 
 def test_scenario_to_dict_preserves_inverter_fields():

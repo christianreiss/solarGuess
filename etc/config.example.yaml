@@ -29,6 +29,9 @@ mqtt:
   connect_retries: 3
   retry_delay: 1.0
   enable: true
+  verify: true
+  publish_retries: 3
+  skip_if_fresh: true
   publish_topics: false
   publish_discovery: true
   verbose: false
