@@ -4,7 +4,7 @@ Implements PLAN 6.x.x "Cloud-Cover Scaling Path":
 - 6.1.1: pull cloudcover (%) from Open-Meteo
 - 6.1.2: expose `weather_mode=cloud-scaled`
 - 6.2.x: compute clear-sky baseline (Ineichen)
-- 6.3.x: map cloud→clearness, scale GHI/DNI/DHI, emit debug
+- 6.3.x: map cloud→clearness, scale GHI; DNI/DHI are derived downstream
 """
 
 from __future__ import annotations
@@ -37,8 +37,10 @@ class CloudScaledWeatherProvider(WeatherProvider):
     """Compose Open-Meteo cloud cover with clear-sky irradiance.
 
     Fetches cloudcover (%) plus temperature/wind from Open-Meteo, generates
-    clear-sky irradiance using pvlib, then scales GHI/DNI/DHI by a clearness
-    factor derived from cloud cover.
+    clear-sky irradiance using pvlib, then scales GHI by a clearness factor
+    derived from cloud cover. DNI/DHI are intentionally left unset (NaN) so the
+    main engine can decompose them using the same midpoint-corrected solar
+    geometry used for POA.
     """
 
     base_provider: OpenMeteoWeatherProvider
@@ -91,8 +93,14 @@ class CloudScaledWeatherProvider(WeatherProvider):
             )
 
             scaled = pd.DataFrame(index=df.index)
-            for col in ("ghi_wm2", "dni_wm2", "dhi_wm2"):
-                scaled[col] = (cs[col] * clearness).clip(lower=0.0)
+            # Scale GHI only, then derive DNI/DHI from scaled GHI so clouds naturally
+            # shift energy towards diffuse rather than scaling beam/diffuse equally.
+            scaled_ghi = (cs["ghi_wm2"] * clearness).clip(lower=0.0)
+            scaled["ghi_wm2"] = scaled_ghi
+            # Decomposition is intentionally deferred to the main engine so it can
+            # use the same midpoint-corrected solar geometry as the POA pipeline.
+            scaled["dni_wm2"] = pd.Series([float("nan")] * len(scaled_ghi), index=scaled_ghi.index)
+            scaled["dhi_wm2"] = pd.Series([float("nan")] * len(scaled_ghi), index=scaled_ghi.index)
 
             # Preserve temp/wind from Open-Meteo
             scaled["temp_air_c"] = df["temp_air_c"]

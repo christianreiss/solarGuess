@@ -38,3 +38,36 @@ def test_horizon_invalid_shape_raises():
                 "horizon_deg": {"bad": "type"},
             }
         )
+
+
+def test_albedo_parses_from_config_and_defaults():
+    arr_default = _parse_array(
+        {
+            "id": "a",
+            "tilt_deg": 10,
+            "azimuth_deg": 0,
+            "pdc0_w": 1000,
+            "gamma_pdc": -0.004,
+            "dc_ac_ratio": 1.1,
+            "eta_inv_nom": 0.96,
+            "losses_percent": 5,
+            "temp_model": "x",
+        }
+    )
+    assert arr_default.albedo == pytest.approx(0.2)
+
+    arr = _parse_array(
+        {
+            "id": "a",
+            "tilt_deg": 10,
+            "azimuth_deg": 0,
+            "pdc0_w": 1000,
+            "gamma_pdc": -0.004,
+            "dc_ac_ratio": 1.1,
+            "eta_inv_nom": 0.96,
+            "losses_percent": 5,
+            "temp_model": "x",
+            "albedo": 0.35,
+        }
+    )
+    assert arr.albedo == pytest.approx(0.35)

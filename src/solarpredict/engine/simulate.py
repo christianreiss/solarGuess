@@ -19,41 +19,6 @@ from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.cloud_scaled import CloudScaledWeatherProvider
 
 
-def _clip_to_pvgis(daily_rows):
-    """Clamp daily POA/energy using PVGIS climatology guidance.
-
-    - If POA ratio vs PVGIS is outside [0.6, 1.6], scale POA and energy to the nearest bound.
-    - Applies per array, preserves peak_kw proportionally.
-    """
-
-    for row in daily_rows:
-        pvgis = row.get("pvgis_poa_kwh_m2")
-        poa = row.get("poa_kwh_m2")
-        if pvgis is None or poa is None:
-            continue
-        if pvgis <= 0:
-            continue
-
-        ratio = poa / pvgis if pvgis else None
-        if ratio is None:
-            continue
-        if 0.6 <= ratio <= 1.6:
-            continue
-
-        # clamp
-        capped_ratio = 1.6 if ratio > 1.6 else 0.6
-        scale = capped_ratio / ratio if ratio != 0 else 1.0
-
-        row["poa_kwh_m2"] = poa * scale
-        row["energy_kwh"] = row["energy_kwh"] * scale
-        row["peak_kw"] = row["peak_kw"] * scale
-
-        row["qc_clipped"] = True
-        row["qc_ratio"] = ratio
-
-    return daily_rows
-
-
 @dataclass(frozen=True)
 class SimulationResult:
     daily: pd.DataFrame
@@ -707,6 +672,7 @@ def simulate_day(
                 dhi=dhi,
                 solar_zenith=solar_pos["zenith"],
                 solar_azimuth=solar_pos["azimuth"],
+                albedo=array.albedo,
                 horizon_deg=array.horizon_deg,
                 iam_model=arr_iam_model,
                 iam_coefficient=arr_iam_coeff,
@@ -859,30 +825,6 @@ def simulate_day(
             )
             _emit_df(arr_debug, "timeseries", ts_df, ts=times[0], site=site.id, array=array.id)
             timeseries[(site.id, array.id)] = ts_df
-
-    # Clamp implausible daily POA/energy vs PVGIS climatology (guideline: 0.6x–1.6x).
-    if daily_rows:
-        capped_rows = []
-        for row in daily_rows:
-            pvgis = row.get("pvgis_poa_kwh_m2")
-            poa = row.get("poa_kwh_m2")
-            if pvgis is None or poa is None or pvgis <= 0:
-                capped_rows.append(row)
-                continue
-            ratio = poa / pvgis
-            if 0.6 <= ratio <= 1.6:
-                capped_rows.append(row)
-                continue
-            cap = 1.6 if ratio > 1.6 else 0.6
-            scale = cap / ratio if ratio != 0 else 1.0
-            row = row.copy()
-            row["poa_kwh_m2"] = poa * scale
-            row["energy_kwh"] = row["energy_kwh"] * scale
-            row["peak_kw"] = row["peak_kw"] * scale
-            row["qc_clipped"] = True
-            row["qc_ratio"] = ratio
-            capped_rows.append(row)
-        daily_rows = capped_rows
 
     daily_df = pd.DataFrame(daily_rows)
     return SimulationResult(daily=daily_df, timeseries=timeseries)

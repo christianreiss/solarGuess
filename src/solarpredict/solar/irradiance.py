@@ -111,7 +111,21 @@ def poa_irradiance(
     # Ensure deterministic column order and clip negatives.
     columns = ["poa_global", "poa_direct", "poa_diffuse", "poa_ground_diffuse"]
     df = pd.DataFrame({col: df.get(col) for col in columns}, index=dni.index)
-    aoi = poa.get("aoi") if isinstance(poa, dict) else None
+
+    # pvlib.get_total_irradiance returns AOI, but we previously discarded it by
+    # re-wrapping columns. Compute AOI explicitly when IAM is enabled.
+    aoi = None
+    if iam_model is not None:
+        aoi = pvlib.irradiance.aoi(
+            surface_tilt=surface_tilt,
+            surface_azimuth=surface_azimuth,
+            solar_zenith=solar_zenith,
+            solar_azimuth=solar_azimuth,
+        )
+        if not isinstance(aoi, pd.Series):
+            aoi = pd.Series(aoi, index=dni.index)
+        else:
+            aoi = aoi.reindex(dni.index)
     df = apply_iam(df, iam_model=iam_model, iam_coefficient=iam_coefficient, aoi=aoi, debug=debug)
     df = df.apply(lambda s: s.where(s > -_NEG_EPS, 0.0).clip(lower=0.0))
 

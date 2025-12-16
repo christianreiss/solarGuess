@@ -24,6 +24,9 @@ from solarpredict.core.debug import JsonlDebugWriter, NullDebugCollector, build_
 from solarpredict.core.models import Location, PVArray, Scenario, Site, ValidationError
 from solarpredict.calibration.ha_tune import auto_calibration_groups, build_prefetched_weather_from_debug_jsonl
 from solarpredict.engine.simulate import apply_actual_adjustment, apply_array_scale_factors, apply_output_scale, simulate_day
+from solarpredict.solar.clear_sky import clear_sky_irradiance
+from solarpredict.solar.irradiance import poa_irradiance
+from solarpredict.solar.position import solar_position
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.pvgis import PVGISWeatherProvider
 from solarpredict.weather.composite import CompositeWeatherProvider
@@ -40,6 +43,95 @@ def default_weather_provider(debug) -> OpenMeteoWeatherProvider:
     """Factory separated for easy monkeypatching in tests."""
 
     return OpenMeteoWeatherProvider(debug=debug)
+
+
+def _compute_clearsky_poa_kwh_m2(
+    scenario: Scenario,
+    timeseries: Dict[Tuple[str, str], pd.DataFrame],
+    *,
+    weather_label: str,
+    debug,
+    iam_model: str | None,
+    iam_coefficient: float | None,
+) -> Dict[Tuple[str, str], float]:
+    """Compute per-array clear-sky POA daily energy (kWh/m²) for a physical ceiling check.
+
+    Uses the already-simulated timeseries index + interval widths so time labeling (start/end)
+    stays consistent with the main run.
+    """
+
+    if not timeseries:
+        return {}
+
+    site_map = {s.id: s for s in scenario.sites}
+    out: Dict[Tuple[str, str], float] = {}
+
+    for site_id, site in site_map.items():
+        # Pick any existing array series for this site to get the canonical time grid.
+        sample_key = next((k for k in timeseries.keys() if k[0] == site_id), None)
+        if sample_key is None:
+            continue
+        sample_df = timeseries.get(sample_key)
+        if sample_df is None or sample_df.empty:
+            continue
+        times = sample_df.index
+        if getattr(times, "tz", None) is None:
+            # Simulator expects tz-aware inputs; skip ceiling if index is naive.
+            continue
+
+        deltas = times.to_series().diff().dt.total_seconds().dropna()
+        step_seconds = float(deltas.median()) if not deltas.empty else 0.0
+        solar_times = times
+        if step_seconds > 0:
+            half = pd.to_timedelta(step_seconds / 2.0, unit="s")
+            label = (weather_label or "end").lower()
+            if label == "end":
+                solar_times = times - half
+            elif label == "start":
+                solar_times = times + half
+            elif label == "center":
+                solar_times = times
+
+        # Compute solar position and clear-sky irradiance at interval midpoints,
+        # then re-index to original provider timestamps to stay aligned.
+        sp = solar_position(site.location, solar_times, debug=NullDebugCollector(), site_id=site.id)
+        sp.index = times
+        cs = clear_sky_irradiance(
+            lat=site.location.lat,
+            lon=site.location.lon,
+            times=solar_times,
+            tz=str(solar_times.tz),
+            elevation_m=site.location.elevation_m,
+            debug=NullDebugCollector(),
+        )
+        cs.index = times
+
+        for array in site.arrays:
+            key = (site.id, array.id)
+            df = timeseries.get(key)
+            if df is None or df.empty or "interval_h" not in df.columns:
+                continue
+
+            interval_h = df["interval_h"].astype(float)
+            arr_iam_model = iam_model if iam_model is not None else array.iam_model
+            arr_iam_coeff = iam_coefficient if iam_coefficient is not None else array.iam_coefficient
+            poa = poa_irradiance(
+                surface_tilt=array.tilt_deg,
+                surface_azimuth=array.azimuth_deg,
+                dni=cs["dni_wm2"],
+                ghi=cs["ghi_wm2"],
+                dhi=cs["dhi_wm2"],
+                solar_zenith=sp["zenith"],
+                solar_azimuth=sp["azimuth"],
+                albedo=array.albedo,
+                horizon_deg=array.horizon_deg,
+                iam_model=arr_iam_model,
+                iam_coefficient=arr_iam_coeff,
+                debug=NullDebugCollector(),
+            )
+            out[key] = float(((poa["poa_global"] / 1000.0) * interval_h).sum())
+
+    return out
 
 
 def _unwrap_typer_default(value):
@@ -604,55 +696,94 @@ def run(
             except Exception:
                 continue
 
-        scale_map = {}
-        # Emit ratios for visibility and keep prior warning logic, now comparing POA instead of GHI proxy.
-        warnings = []
-        for _, row in result.daily.iterrows():
-            key = (row["site"], row["array"])
-            forecast_poa = float(row.get("poa_kwh_m2", 0) or 0)
-            baseline_poa = pvgis_poa_map.get(key)
-            ratio = float(forecast_poa / baseline_poa) if baseline_poa else float("inf")
-            # Track scale factors so we can apply the clamp to timeseries as well for consistency.
-            scale_map[key] = 1.0
-            debug_collector.emit(
-                "qc.pvgis_compare",
-                {"site": key[0], "array": key[1], "ratio": ratio, "baseline_poa_kwh_m2": baseline_poa},
-                ts=date_obj,
-            )
-            # Heuristic band: allow wider when cloudy (low POA).
-            cloudy = forecast_poa < 0.6  # kWh/m2 per day rough cloud marker
-            low, high = (0.3, 2.0) if cloudy else (0.6, 1.6)
-            if baseline_poa is not None and (ratio < low or ratio > high):
-                warnings.append(
-                    f"{key[0]}/{key[1]} PVGIS POA ratio {ratio:.2f} outside [{low},{high}] (cloudy={cloudy})"
-                )
+        # Compute a clear-sky POA ceiling (kWh/m²) on the same time grid so we can
+        # clamp only when forecasts exceed a physical maximum.
+        clearsky_poa_map = _compute_clearsky_poa_kwh_m2(
+            scenario,
+            result.timeseries,
+            weather_label=weather_label,
+            debug=debug_collector,
+            iam_model=iam_model,
+            iam_coefficient=iam_coefficient,
+        )
 
         # Attach PVGIS POA baseline onto the main daily output so MQTT can publish it.
         daily_with_pvgis = result.daily.copy()
         daily_with_pvgis["pvgis_poa_kwh_m2"] = daily_with_pvgis.apply(
             lambda row: pvgis_poa_map.get((row["site"], row["array"])), axis=1
         )
-        # Clamp implausible POA/energy vs PVGIS (0.6x–1.6x) now that the baseline is attached.
+
+        # Warn on deviations vs PVGIS typical-year baseline, but only clamp when the
+        # forecast exceeds a clear-sky ceiling (i.e., physically implausible).
+        ceiling_margin = 1.15  # allow modeling / timestamp differences; clamp only on clear outliers
+        scale_map = {}
         capped_rows = []
         for _, row in daily_with_pvgis.iterrows():
-            pvgis = row.get("pvgis_poa_kwh_m2")
+            key = (row.get("site"), row.get("array"))
             poa = row.get("poa_kwh_m2")
-            if pvgis is None or poa is None or pd.isna(pvgis) or pd.isna(poa) or pvgis <= 0:
-                capped_rows.append(row)
-                continue
-            ratio = poa / pvgis
-            if 0.6 <= ratio <= 1.6:
-                capped_rows.append(row)
-                continue
-            cap = 1.6 if ratio > 1.6 else 0.6
-            scale = cap / ratio if ratio != 0 else 1.0
-            scale_map[(row["site"], row["array"])] = scale
+            forecast_poa = float(poa or 0.0)
+
+            # Track scale factors so we can apply any ceiling clamp to timeseries for consistency.
+            scale_map[key] = 1.0
+
+            # PVGIS comparison is informational (warn-first).
+            pvgis = row.get("pvgis_poa_kwh_m2")
+            baseline_poa = None
+            ratio = float("inf")
+            if pvgis is not None and not pd.isna(pvgis) and float(pvgis) > 0:
+                baseline_poa = float(pvgis)
+                ratio = float(forecast_poa / baseline_poa)
+            debug_collector.emit(
+                "qc.pvgis_compare",
+                {
+                    "site": key[0],
+                    "array": key[1],
+                    "ratio": ratio,
+                    "baseline_poa_kwh_m2": baseline_poa,
+                    "forecast_poa_kwh_m2": forecast_poa,
+                },
+                ts=date_obj,
+            )
+            cloudy = forecast_poa < 0.6  # kWh/m2 per day rough cloud marker
+            low, high = (0.3, 2.0) if cloudy else (0.6, 1.6)
+            if baseline_poa is not None and (ratio < low or ratio > high):
+                typer.echo(
+                    f"QC warning: {key[0]}/{key[1]} PVGIS POA ratio {ratio:.2f} outside [{low},{high}] (cloudy={cloudy})",
+                    err=True,
+                )
+
+            # Clear-sky ceiling clamp (hard guardrail).
+            cs_poa = clearsky_poa_map.get(key)
+            if cs_poa is not None and cs_poa > 0:
+                cs_ratio = float(forecast_poa / cs_poa) if cs_poa else float("inf")
+                debug_collector.emit(
+                    "qc.clearsky_compare",
+                    {
+                        "site": key[0],
+                        "array": key[1],
+                        "ratio": cs_ratio,
+                        "clearsky_poa_kwh_m2": float(cs_poa),
+                        "forecast_poa_kwh_m2": forecast_poa,
+                        "margin": ceiling_margin,
+                    },
+                    ts=date_obj,
+                )
+                max_allowed = float(cs_poa) * ceiling_margin
+                if forecast_poa > max_allowed and forecast_poa > 0:
+                    scale = max_allowed / forecast_poa
+                    scale_map[key] = scale
+
             row = row.copy()
-            row["poa_kwh_m2"] = poa * scale
-            row["energy_kwh"] = row["energy_kwh"] * scale
-            row["peak_kw"] = row["peak_kw"] * scale
-            row["qc_clipped"] = True
-            row["qc_ratio"] = ratio
+            scale = scale_map[key]
+            if scale != 1.0:
+                row["poa_kwh_m2"] = float(row["poa_kwh_m2"]) * scale
+                row["energy_kwh"] = float(row["energy_kwh"]) * scale
+                row["peak_kw"] = float(row["peak_kw"]) * scale
+                row["qc_clipped"] = True
+                row["qc_clip_reason"] = "clearsky_ceiling"
+                row["qc_ratio"] = ratio
+                row["qc_clearsky_poa_kwh_m2"] = float(cs_poa) if cs_poa is not None else None
+                row["qc_clearsky_ratio"] = float(forecast_poa / cs_poa) if cs_poa else None
             capped_rows.append(row)
         daily_with_pvgis = pd.DataFrame(capped_rows)
 
@@ -670,9 +801,6 @@ def run(
                 scaled_ts[key] = df
 
         result = type(result)(daily=daily_with_pvgis, timeseries=scaled_ts)
-
-        for w in warnings:
-            typer.echo(f"QC warning: {w}", err=True)
 
     daily = result.daily
 

@@ -184,6 +184,34 @@ def test_pvarray_validation():
         horizon_deg=[0] * 12,
     )
     assert ok.horizon_deg == [0.0] * 12
+    assert ok.albedo == pytest.approx(0.2)
+
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
+            losses_percent=14,
+            temp_model="noct",
+            albedo=-0.1,
+        )
+    with pytest.raises(ValidationError):
+        PVArray(
+            id="arr",
+            tilt_deg=10,
+            azimuth_deg=0,
+            pdc0_w=1000,
+            gamma_pdc=-0.003,
+            dc_ac_ratio=1.2,
+            eta_inv_nom=0.96,
+            losses_percent=14,
+            temp_model="noct",
+            albedo=1.5,
+        )
 
 
 def test_pvarray_iam_model_without_horizon_ok():

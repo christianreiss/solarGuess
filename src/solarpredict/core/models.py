@@ -44,6 +44,7 @@ class PVArray:
     temp_model: str
     inverter_pdc0_w: Optional[float] = None
     inverter_group_id: Optional[str] = None
+    albedo: float = 0.2
     horizon_deg: Optional[list[float]] = None
     damping_morning: float = 1.0
     damping_evening: float = 1.0
@@ -75,6 +76,15 @@ class PVArray:
             raise ValidationError("losses_percent must be between 0 and 100")
         if not self.temp_model:
             raise ValidationError("temp_model is required")
+        if self.albedo is None:
+            object.__setattr__(self, "albedo", 0.2)
+        try:
+            albedo = float(self.albedo)
+        except Exception as exc:
+            raise ValidationError("albedo must be numeric") from exc
+        if not (0.0 <= albedo <= 1.0):
+            raise ValidationError("albedo must be between 0 and 1")
+        object.__setattr__(self, "albedo", albedo)
         for label, val in ("damping_morning", self.damping_morning), ("damping_evening", self.damping_evening):
             if val is None:
                 object.__setattr__(self, label, 1.0)

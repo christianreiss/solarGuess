@@ -32,7 +32,7 @@ _DEF_REQUIRED_ARRAY_KEYS = {
     "losses_percent",
     "temp_model",
 }
-_OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening", "iam_model", "iam_coefficient"}
+_OPTIONAL_ARRAY_KEYS = {"horizon_deg", "damping", "damping_morning", "damping_evening", "iam_model", "iam_coefficient", "albedo"}
 
 
 # Run block accepts optional tuning; validated when referenced.
@@ -111,6 +111,7 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
         de = float(damping_evening) if damping_evening is not None else 1.0
         iam_model = raw.get("iam_model")
         iam_coefficient = float(raw["iam_coefficient"]) if raw.get("iam_coefficient") is not None else None
+        albedo = float(raw["albedo"]) if raw.get("albedo") is not None else 0.2
         return PVArray(
             id=raw["id"],
             tilt_deg=float(raw["tilt_deg"]),
@@ -123,6 +124,7 @@ def _parse_array(raw: Dict[str, Any]) -> PVArray:
             temp_model=raw["temp_model"],
             inverter_group_id=raw.get("inverter_group_id"),
             inverter_pdc0_w=float(raw["inverter_pdc0_w"]) if raw.get("inverter_pdc0_w") is not None else None,
+            albedo=albedo,
             horizon_deg=horizon,
             damping_morning=dm,
             damping_evening=de,

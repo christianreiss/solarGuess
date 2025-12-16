@@ -57,7 +57,7 @@ Forecast inputs (Open-Meteo live + cloud cover, PVGIS TMY baseline/cache)
         │            │                        │
         ├──► Losses → AC net                  │
         │            │                        │
-        └──► Aggregation → QC (PVGIS clamp) → load windows / actual scaling
+        └──► Aggregation → QC (PVGIS compare + clear-sky ceiling) → load windows / actual scaling
 ```
 
 ---
@@ -218,6 +218,7 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 ### 5. Plane-of-array irradiance (`solar.irradiance.poa_irradiance`)
 
 - Perez transposition with `dni_extra` precomputed. Negative irradiance caused by API noise is clipped to zero for deterministic behavior.
+- Ground-reflected diffuse uses per-array `albedo` (default `0.2`), so snow/bright ground can be modeled explicitly when needed.
 - Returns columns `poa_global`, `poa_direct`, `poa_diffuse`, `poa_ground_diffuse` per array. Summary debug reports energy (`poa_wh_m2`) and peak POA.
 
 ### 6. Cell temperature (`solar.temperature.cell_temperature`)
@@ -247,7 +248,8 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 
 ### 11. System losses (`pv.power.apply_losses`)
 
-- Lumped `losses_percent` applied to `pac_w` to produce `pac_net_w`. Debug log captures the factor and resulting min/max.
+- Lumped `losses_percent` applied to `pac_w` to produce `pac_net_w`.
+- Important: this is applied *after* the inverter model, so treat `losses_percent` as “everything except inverter conversion efficiency” (wiring, mismatch, soiling, availability, etc.) to avoid double-counting inverter losses.
 
 ### 12. Energy integration & aggregation (`engine.simulate`)
 
@@ -262,7 +264,7 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 ### Cloud-scaled weather mode (`weather.cloud_scaled.CloudScaledWeatherProvider`)
 
 - Use `--weather-mode cloud-scaled` (or `run.weather_mode: cloud-scaled`) to bypass noisy irradiance feeds and instead scale pvlib clear-sky by Open-Meteo cloud cover.
-- Converts cloud % → clearness index via `k_t = 1 - 0.75 * C**3.4`, clamps [0,1], multiplies Ineichen GHI/DNI/DHI, and preserves Open-Meteo temp/wind for SAPM temperature.
+- Converts cloud % → clearness index via `k_t = 1 - 0.75 * C**3.4`, clamps [0,1], scales clear-sky **GHI**, then derives DNI/DHI via decomposition (so cloudier conditions shift energy toward diffuse rather than scaling beam/diffuse equally). Preserves Open-Meteo temp/wind for SAPM temperature.
 - Emits `cloudscaled.summary` debug with clearness min/mean/max plus resulting `ghi_max` so you can diff runs quickly.
 
 ### Incidence angle modifiers (IAM)
@@ -278,7 +280,8 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 
 ### PVGIS QC + clipping
 
-- `--qc-pvgis` spins a parallel PVGIS run, compares POA energy, and clamps forecasts outside ~0.6–1.6× (wider when cloudy). Daily rows now carry `pvgis_poa_kwh_m2`, `qc_clipped`, `qc_ratio`.
+- `--qc-pvgis` spins a parallel PVGIS run and compares POA energy vs typical-year climatology. We *warn* when the ratio is outside the heuristic band (~0.6–1.6×, wider when cloudy) but avoid hard clamping for plausible weather extremes.
+- We only clamp when the forecast exceeds a **clear-sky POA ceiling** (physical guardrail). Daily rows carry `pvgis_poa_kwh_m2`; if clamping triggers we set `qc_clipped`, `qc_clip_reason=clearsky_ceiling`, plus `qc_clearsky_*` fields for auditability.
 - When clipping fires we rescale POA/DC/AC timeseries so debug output, MQTT payloads, and load windows align with the adjusted totals.
 
 ### Load window detection (`engine.load_window`)
