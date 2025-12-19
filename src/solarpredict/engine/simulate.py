@@ -759,7 +759,8 @@ def simulate_day(
             _emit_series(site_debug, "ac.group", pac_group.rename(f"pac_group_{group_id}"), ts=times[0], site=site.id)
 
             # allocate by DC share per timestep; handle zeros
-            pdc_sum_safe = pdc_sum.replace(0, pd.NA).infer_objects(copy=False)
+            # Use NaN (float) instead of pd.NA to avoid object dtype cascades on pandas fillna.
+            pdc_sum_safe = pdc_sum.replace(0, np.nan).infer_objects(copy=False)
             share = {
                 a: (array_data[a]["pdc"].infer_objects(copy=False) / pdc_sum_safe).infer_objects(copy=False)
                 for a in arr_ids

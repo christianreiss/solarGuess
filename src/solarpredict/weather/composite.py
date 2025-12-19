@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable
 
+import numpy as np
 import pandas as pd
 
 from solarpredict.core.debug import DebugCollector, NullDebugCollector, ScopedDebugCollector
@@ -43,7 +44,8 @@ class CompositeWeatherProvider(WeatherProvider):
             aligned.loc[in_overlap] = aligned.loc[in_overlap].ffill().bfill()
 
         # Outside overlap remains NaN to force callers to notice missing coverage.
-        aligned.loc[~in_overlap] = pd.NA
+        # Use np.nan to keep numeric dtypes and avoid pandas downcast warnings on fillna/ffill/bfill.
+        aligned.loc[~in_overlap] = np.nan
         return aligned
 
     def get_forecast(

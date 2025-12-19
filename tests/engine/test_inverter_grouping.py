@@ -1,6 +1,7 @@
 import datetime as dt
 import pandas as pd
 import pytest
+import warnings
 
 from solarpredict.engine.simulate import simulate_day
 from solarpredict.core.models import Scenario, Site, Location, PVArray
@@ -79,3 +80,33 @@ def test_shared_inverter_conflicting_sizes_raise():
 
     with pytest.raises(ValueError):
         simulate_day(scenario, dt.date(2025, 6, 1), timestep="1h", weather_provider=wx)
+
+
+def test_inverter_grouping_zero_pdc_does_not_warn():
+    """Night/very-dark hours produce pdc_sum=0; allocation should stay numeric without pandas downcast warnings."""
+
+    class WeatherWithZeros:
+        def __init__(self):
+            idx = pd.date_range("2025-06-01 10:00", periods=4, freq="1h", tz="UTC", inclusive="left")
+            self.df = pd.DataFrame(
+                {
+                    "ghi_wm2": [0.0, 0.0, 1000.0, 1000.0],
+                    "dni_wm2": [0.0, 0.0, 800.0, 800.0],
+                    "dhi_wm2": [0.0, 0.0, 200.0, 200.0],
+                    "temp_air_c": [25.0] * 4,
+                    "wind_ms": [1.0] * 4,
+                },
+                index=idx,
+            )
+
+        def get_forecast(self, locations, start, end, timestep):
+            return {loc["id"]: self.df for loc in locations}
+
+    wx = WeatherWithZeros()
+    scenario = _scenario(shared=True)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", category=FutureWarning)
+        result = simulate_day(scenario, dt.date(2025, 6, 1), timestep="1h", weather_provider=wx)
+
+    assert result.daily["energy_kwh"].sum() > 0

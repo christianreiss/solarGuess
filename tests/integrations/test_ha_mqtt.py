@@ -164,6 +164,7 @@ def test_build_discovery_config_includes_topics():
     assert disc["stat_t"] == cfg.state_topic
     assert disc["json_attr_t"] == cfg.state_topic
     assert "uniq_id" in disc
+    assert disc["suggested_display_precision"] == 3
 
 
 def test_iter_topics_formats_meta_and_arrays():

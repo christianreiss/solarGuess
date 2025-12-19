@@ -478,6 +478,8 @@ def build_discovery_config(cfg: MqttConfig) -> Dict[str, Any]:
         "pl_not_avail": "offline",
         "val_tpl": "{{ value_json.meta.total_energy_kwh }}",
         "unit_of_meas": "kWh",
+        # Avoid tiny-but-nonzero forecasts appearing as "0" in HA UI due to default rounding.
+        "suggested_display_precision": 3,
         "dev_cla": "energy",
         "stat_cla": "measurement",
         "json_attr_t": topics["state"],
