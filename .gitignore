@@ -1,7 +1,9 @@
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.py[cod]
 .Python
 build/
 dist/
@@ -17,6 +19,7 @@ pytestcache/
 /etc/config.yaml
 /etc/config.tuned.yaml
 /etc/*.yaml~
+/etc/verify.md
 /live_results.json
 /live_debug.jsonl
 /live_results.json.bak.*
