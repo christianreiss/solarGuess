@@ -31,3 +31,4 @@ def test_load_scenario_carries_inverter_fields(tmp_path: Path):
     arr = scenario.sites[0].arrays[0]
     assert arr.inverter_group_id == "g1"
     assert arr.inverter_pdc0_w == 6500
+

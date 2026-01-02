@@ -105,6 +105,9 @@ class CloudScaledWeatherProvider(WeatherProvider):
             # Preserve temp/wind from Open-Meteo
             scaled["temp_air_c"] = df["temp_air_c"]
             scaled["wind_ms"] = df["wind_ms"]
+            for col in ("snow_depth_cm", "snowfall_cm", "precip_mm"):
+                if col in df.columns:
+                    scaled[col] = df[col]
 
             loc_debug.emit(
                 "cloudscaled.summary",

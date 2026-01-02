@@ -14,6 +14,7 @@ from solarpredict.solar.decomposition import fill_dni_dhi
 from solarpredict.pv.power import apply_losses, inverter_pdc0_from_dc_ac_ratio, pvwatts_ac, pvwatts_dc
 from solarpredict.solar.irradiance import poa_irradiance
 from solarpredict.solar.position import solar_position
+from solarpredict.solar.snow import snow_cover_loss
 from solarpredict.solar.temperature import cell_temperature
 from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 from solarpredict.weather.cloud_scaled import CloudScaledWeatherProvider
@@ -402,6 +403,36 @@ def _infer_step_seconds(index: pd.DatetimeIndex, declared_timestep: str) -> floa
     return 0.0
 
 
+def _align_snow_inputs(snow_df: pd.DataFrame | None, target_index: pd.DatetimeIndex) -> pd.DataFrame | None:
+    if snow_df is None or snow_df.empty:
+        return None
+
+    df = snow_df.copy()
+    target_tz = target_index.tz if hasattr(target_index, "tz") else None
+    if getattr(df.index, "tz", None) is not None:
+        if target_tz is not None:
+            df.index = df.index.tz_convert(target_tz)
+        else:
+            df.index = df.index.tz_localize(None)
+    elif target_tz is not None:
+        df.index = df.index.tz_localize(target_tz)
+
+    aligned = pd.DataFrame(index=target_index)
+    for col in ("snow_depth_cm", "snowfall_cm", "precip_mm", "temp_air_c"):
+        if col not in df.columns:
+            continue
+        series = df[col].astype(float).reindex(target_index)
+        if col == "snow_depth_cm":
+            series = series.ffill().bfill()
+        else:
+            series = series.fillna(0.0)
+        aligned[col] = series
+
+    if aligned.empty or aligned.shape[1] == 0:
+        return None
+    return aligned
+
+
 def _emit_df(debug: DebugCollector, stage: str, df: pd.DataFrame, *, ts, site=None, array=None) -> None:
     """Emit entire dataframe as records for auditability."""
     try:
@@ -570,6 +601,15 @@ def simulate_day(
         site=None,
     )
     weather = weather_provider.get_forecast(locations, start=start, end=end, timestep=timestep)
+    snow_weather = None
+    if isinstance(weather_provider, (OpenMeteoWeatherProvider, CloudScaledWeatherProvider)):
+        snow_weather = weather
+    else:
+        try:
+            snow_provider = OpenMeteoWeatherProvider(debug=debug)
+            snow_weather = snow_provider.get_forecast(locations, start=start, end=end, timestep=timestep)
+        except Exception as exc:  # pragma: no cover - best effort; do not fail core simulation
+            debug.emit("snow.weather_error", {"error": str(exc)}, ts=start)
     # emit raw weather snapshot for audit (per site to keep site ids consistent)
     for loc_id, df in weather.items():
         try:
@@ -611,6 +651,9 @@ def simulate_day(
 
         times = wx.index
         step_seconds = _infer_step_seconds(times, timestep)
+        snow_wx = None
+        if snow_weather is not None and str(site.id) in snow_weather:
+            snow_wx = _align_snow_inputs(snow_weather[str(site.id)], times)
 
         # Emit minimal weather meta/summary even if provider didn't
         site_debug.emit(
@@ -709,8 +752,29 @@ def simulate_day(
                 ts=times[0] if len(times) else None,
             )
 
+            snow_factor = pd.Series(1.0, index=times, name="snow_loss_factor")
+            snow_depth = None
+            if snow_wx is not None:
+                snow = snow_cover_loss(snow_wx, debug=arr_debug)
+                snow_factor = snow.factor
+                snow_depth = snow.depth_cm
+                arr_debug.emit(
+                    "stage.snow",
+                    {"rows": len(snow_factor), "source": snow.source},
+                    ts=times[0] if len(times) else None,
+                )
+                _emit_series(
+                    arr_debug, "snow.loss_factor", snow_factor.rename("snow_loss_factor"), ts=times[0], site=site.id, array=array.id
+                )
+                if snow_depth is not None:
+                    _emit_series(
+                        arr_debug, "snow.depth_cm", snow_depth.rename("snow_depth_cm"), ts=times[0], site=site.id, array=array.id
+                    )
+            else:
+                arr_debug.emit("snow.loss.skip", {"reason": "no_snow_weather"}, ts=times[0] if len(times) else None)
+
             pdc = pvwatts_dc(
-                effective_irradiance=poa["poa_global"] * damping,
+                effective_irradiance=poa["poa_global"] * damping * snow_factor,
                 temp_cell=temps,
                 pdc0_w=array.pdc0_w,
                 gamma_pdc=array.gamma_pdc,
@@ -724,6 +788,8 @@ def simulate_day(
                 "poa": poa,
                 "temps": temps,
                 "pdc": pdc,
+                "snow_factor": snow_factor,
+                "snow_depth": snow_depth,
                 "array": array,
             }
 
@@ -821,6 +887,7 @@ def simulate_day(
                     "pdc_w": data["pdc"],
                     "pac_w": pac,
                     "pac_net_w": pac_net,
+                    "snow_loss_factor": data.get("snow_factor"),
                     "interval_h": interval_h,
                 }
             )

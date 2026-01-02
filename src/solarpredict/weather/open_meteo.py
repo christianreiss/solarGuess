@@ -17,6 +17,9 @@ _VAR_MAP = {
     "shortwave_radiation": "ghi_wm2",
     "diffuse_radiation": "dhi_wm2",
     "direct_normal_irradiance": "dni_wm2",
+    "precipitation": "precip_mm",
+    "snowfall": "snowfall_cm",
+    "snow_depth": "snow_depth_cm",
     "cloudcover": "cloudcover",
 }
 
@@ -90,6 +93,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             raise ValueError("Open-Meteo response missing time series block")
         time_values = time_block["time"]
         timezone = payload.get("timezone")
+        units_block = payload.get("hourly_units") or payload.get("minutely_15_units") or {}
 
         # Open‑Meteo returns local times when `timezone=auto`. Parsing as UTC and then converting
         # would shift the series by the offset (e.g., +1h for Europe/Berlin). Instead:
@@ -144,7 +148,43 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             data[col] = series
         df = pd.DataFrame(data, index=index)
         df.index.name = "ts"
+        self._normalize_units(df, units_block)
         return df
+
+    @staticmethod
+    def _normalize_units(df: pd.DataFrame, units: Dict[str, str]) -> None:
+        def _convert(col: str, unit: str, to_unit: str) -> None:
+            if col not in df.columns:
+                return
+            series = df[col].astype(float)
+            if unit == to_unit:
+                df[col] = series
+                return
+            if to_unit == "cm":
+                if unit in {"m", "meter", "meters"}:
+                    df[col] = series * 100.0
+                elif unit == "mm":
+                    df[col] = series / 10.0
+            elif to_unit == "mm":
+                if unit in {"m", "meter", "meters"}:
+                    df[col] = series * 1000.0
+                elif unit == "cm":
+                    df[col] = series * 10.0
+
+        if not units:
+            return
+
+        snow_depth_unit = units.get("snow_depth")
+        if snow_depth_unit:
+            _convert("snow_depth_cm", snow_depth_unit, "cm")
+
+        snowfall_unit = units.get("snowfall")
+        if snowfall_unit:
+            _convert("snowfall_cm", snowfall_unit, "cm")
+
+        precip_unit = units.get("precipitation")
+        if precip_unit:
+            _convert("precip_mm", precip_unit, "mm")
 
     def _validate_dates(self, start: str, end: str) -> None:
         """Fail fast on clearly invalid date windows instead of surfacing opaque HTTP 400s."""

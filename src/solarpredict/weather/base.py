@@ -25,6 +25,10 @@ class WeatherProvider(Protocol):
         - ghi_wm2
         - dhi_wm2
         - dni_wm2
+        Optional columns may include:
+        - snow_depth_cm
+        - snowfall_cm
+        - precip_mm
         """
         ...
 

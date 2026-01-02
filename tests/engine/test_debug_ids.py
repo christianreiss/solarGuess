@@ -3,9 +3,10 @@ import pandas as pd
 from solarpredict.engine.simulate import simulate_day
 from solarpredict.core.models import Scenario, Site, Location, PVArray
 from solarpredict.core.debug import ListDebugCollector
+from solarpredict.weather.open_meteo import OpenMeteoWeatherProvider
 
 
-def test_debug_uses_site_id_not_location_id():
+def test_debug_uses_site_id_not_location_id(monkeypatch):
     loc = Location(id="loc-should-not-leak", lat=0, lon=0, tz="UTC")
     site = Site(id="site-1", location=loc, arrays=[
         PVArray(id="arr", tilt_deg=0, azimuth_deg=0, pdc0_w=1000, gamma_pdc=-0.004,
@@ -26,6 +27,10 @@ def test_debug_uses_site_id_not_location_id():
         def get_forecast(self, locations, start, end, timestep):
             return {site.id: df}
 
+    def _fake_open_meteo(self, locations, start, end, timestep="1h"):
+        return {loc["id"]: df for loc in locations}
+
+    monkeypatch.setattr(OpenMeteoWeatherProvider, "get_forecast", _fake_open_meteo)
     debug = ListDebugCollector()
     simulate_day(scenario, dt.date(2025, 1, 1), timestep="1h", weather_provider=DummyWeather(), debug=debug)
 

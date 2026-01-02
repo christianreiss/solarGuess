@@ -278,6 +278,12 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 - `damping` (single) or `damping_morning`/`damping_evening` attenuate POA near sunrise/sunset using a cosine ramp (~1.5 h window). Ideal for self-consumption caps or shading heuristics.
 - `horizon_deg` (≥12 evenly spaced azimuth samples) blanks the direct beam when local terrain exceeds sun elevation. We interpolate circularly and leave diffuse terms untouched.
 
+### Snow cover loss factor
+
+- Snow loss is **automatic** when Open‑Meteo reports snow depth/snowfall or cold precipitation (≤ 0°C). No config required.
+- We always fetch Open‑Meteo in parallel (even if irradiance comes from PVGIS or cloud‑scaled mode) to detect snow/precip.
+- Internally we use a fixed linear coverage model: losses start at 0.5 cm, reach max loss at 5 cm, and max loss is 0.7 (70%).
+
 ### PVGIS QC + clipping
 
 - `--qc-pvgis` spins a parallel PVGIS run and compares POA energy vs typical-year climatology. We *warn* when the ratio is outside the heuristic band (~0.6–1.6×, wider when cloudy) but avoid hard clamping for plausible weather extremes.
