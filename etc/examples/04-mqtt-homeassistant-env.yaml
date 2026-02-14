@@ -1,0 +1,61 @@
+# Example 04: Combined scenario + run + MQTT (Home Assistant), with env-var credentials.
+#
+# Highlights:
+# - `solarguess go` uses `run:` + `mqtt:` defaults from this one file.
+# - MQTT creds can be pulled from environment variables for safer sharing.
+#
+# Run (simulate + publish):
+#   export SOLARGUESS_MQTT_USERNAME="your-user"
+#   export SOLARGUESS_MQTT_PASSWORD="your-pass"
+#   PYTHONPATH=src solarguess go --config etc/examples/04-mqtt-homeassistant-env.yaml --date "$(date +%F)"
+#
+# Run (simulate only):
+#   PYTHONPATH=src solarguess go --config etc/examples/04-mqtt-homeassistant-env.yaml --date "$(date +%F)" --no-publish
+sites:
+  - id: demo_mqtt_site
+    location:
+      id: demo_mqtt_site
+      lat: 47.6062
+      lon: -122.3321
+      tz: America/Los_Angeles
+    arrays:
+      - id: roof_main
+        inverter_group_id: inv1
+        tilt_deg: 30
+        azimuth_deg: 180
+        pdc0_w: 6500
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.20
+        eta_inv_nom: 0.96
+        losses_percent: 8
+        temp_model: close_mount_glass_glass
+
+run:
+  timestep: 15m
+  weather_label: end
+  weather_source: open-meteo
+  format: json
+  output: json/%F.json
+  debug: debug/%F.jsonl
+
+mqtt:
+  enable: true
+  # When running `solarguess go`, input defaults to the run output. This is mainly
+  # for `solarguess publish-mqtt` when run separately.
+  input: json/%F.json
+  host: mqtt.lan
+  port: 1883
+  username: env:SOLARGUESS_MQTT_USERNAME
+  password: ${SOLARGUESS_MQTT_PASSWORD}
+  base_topic: solarguess
+  discovery_prefix: homeassistant
+  connect_retries: 3
+  retry_delay: 1.0
+  publish_state: true
+  publish_topics: false
+  publish_discovery: true
+  verbose: false
+  verify: true
+  publish_retries: 3
+  skip_if_fresh: true
+

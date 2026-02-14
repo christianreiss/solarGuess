@@ -1,0 +1,66 @@
+# Example 02: Two arrays on one site, sharing an inverter group, with simple shading knobs.
+#
+# Highlights:
+# - inverter grouping (models clipping at the group level)
+# - horizon_deg masking (terrain/obstructions)
+# - damping (sunrise/sunset attenuation)
+# - IAM (incidence angle modifier) + albedo
+#
+# Run:
+#   PYTHONPATH=src solarguess run --config etc/examples/02-two-arrays-shared-inverter-shading.yaml --date "$(date +%F)"
+sites:
+  - id: demo_shaded_roof
+    location:
+      id: demo_shaded_roof
+      lat: 34.0522
+      lon: -118.2437
+      tz: America/Los_Angeles
+    arrays:
+      # East-facing roof plane (azimuth 90 = east)
+      - id: roof_east
+        inverter_group_id: inv_main
+        tilt_deg: 20
+        azimuth_deg: 90
+        pdc0_w: 3300
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.15
+        eta_inv_nom: 0.97
+        losses_percent: 9
+        temp_model: close_mount_glass_glass
+        albedo: 0.25
+        iam_model: ashrae
+        iam_coefficient: 0.05
+        # Damping attenuates POA near sunrise/sunset with a cosine window (~1.5h).
+        # Use a 2-tuple [morning, evening] or a single scalar for both.
+        damping: [0.70, 1.00]
+        # Horizon mask: 12+ samples at azimuth bins starting at 0deg (north), clockwise.
+        # Values are the minimum sun elevation (deg) required for the direct beam.
+        horizon_deg: [5, 5, 8, 18, 25, 12, 6, 6, 10, 18, 10, 6]
+
+      # West-facing roof plane (west is 270deg, represented as -90)
+      - id: roof_west
+        inverter_group_id: inv_main
+        tilt_deg: 20
+        azimuth_deg: -90
+        pdc0_w: 3300
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.15
+        eta_inv_nom: 0.97
+        losses_percent: 9
+        temp_model: close_mount_glass_glass
+        albedo: 0.25
+        iam_model: ashrae
+        iam_coefficient: 0.05
+        damping: [1.00, 0.70]
+        horizon_deg: [5, 5, 8, 12, 10, 6, 6, 10, 25, 18, 8, 5]
+
+run:
+  timestep: 15m
+  weather_label: end
+  weather_source: open-meteo
+  weather_mode: standard
+  format: json
+  output: json/%F.json
+  intervals: intervals/%F.csv
+  debug: debug/%F.jsonl
+

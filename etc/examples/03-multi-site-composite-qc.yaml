@@ -1,0 +1,74 @@
+# Example 03: Multi-site scenario with composite weather + QC + calibration knobs.
+#
+# Highlights:
+# - 2 sites with different time zones
+# - composite weather provider (Open-Meteo primary, PVGIS TMY used to fill gaps)
+# - cloud-scaled mode (clear-sky scaled by cloud cover)
+# - qc_pvgis enabled (compare forecast vs PVGIS TMY baseline)
+# - global + per-array scale factors (empirical calibration)
+# - optional load-window detection (base_load_w + min_duration_min)
+#
+# Run (simulate + skip publish):
+#   PYTHONPATH=src solarguess go --config etc/examples/03-multi-site-composite-qc.yaml --date "$(date +%F)" --no-publish
+sites:
+  - id: boulder_co
+    location:
+      id: boulder_co
+      lat: 40.01499
+      lon: -105.27055
+      tz: America/Denver
+      elevation_m: 1624
+    arrays:
+      - id: roof_south
+        tilt_deg: 25
+        azimuth_deg: 180
+        pdc0_w: 7200
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.25
+        eta_inv_nom: 0.965
+        losses_percent: 8
+        temp_model: close_mount_glass_glass
+
+  - id: austin_tx
+    location:
+      id: austin_tx
+      lat: 30.2672
+      lon: -97.7431
+      tz: America/Chicago
+      elevation_m: 150
+    arrays:
+      - id: carport
+        tilt_deg: 5
+        azimuth_deg: 180
+        pdc0_w: 10000
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.10
+        eta_inv_nom: 0.97
+        losses_percent: 10
+        temp_model: open_rack_glass_polymer
+
+run:
+  timestep: 15m
+  weather_label: end
+  weather_source: composite
+  weather_mode: cloud-scaled
+  qc_pvgis: true
+  pvgis_cache_dir: .cache/pvgis
+
+  # Calibration knobs (optional)
+  scale_factor: 1.00
+  array_scale_factors:
+    boulder_co/roof_south: 0.98
+    carport: 1.03
+
+  # Optional: detect windows where site net power exceeds a baseline load.
+  base_load_w: 1200
+  min_duration_min: 45
+  required_wh: 1500
+
+  format: json
+  output_shape: hierarchical
+  output: json/%F.json
+  intervals: intervals/%F.csv
+  debug: debug/%F.jsonl
+

@@ -1,0 +1,27 @@
+# Example 01: Minimal scenario (1 site, 1 PV array).
+#
+# Run:
+#   PYTHONPATH=src solarguess run --config etc/examples/01-minimal-single-site.yaml --date "$(date +%F)"
+#
+# Notes:
+# - azimuth_deg follows pvlib convention: 0=north, 90=east, 180=south, 270(west) == -90.
+# - temp_model must match a pvlib SAPM key (see README).
+sites:
+  - id: demo_denver
+    location:
+      id: demo_denver
+      lat: 39.7392
+      lon: -104.9903
+      tz: America/Denver
+      elevation_m: 1609
+    arrays:
+      - id: roof_south
+        tilt_deg: 30
+        azimuth_deg: 180
+        pdc0_w: 5000
+        gamma_pdc: -0.004
+        dc_ac_ratio: 1.2
+        eta_inv_nom: 0.96
+        losses_percent: 7
+        temp_model: close_mount_glass_glass
+
