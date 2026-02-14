@@ -327,6 +327,12 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 
 - Pass `--debug debug.jsonl` to any CLI command; internally this instantiates `JsonlDebugWriter` which produces deterministic JSON lines (`{"stage":"pv.dc.summary",...}`) for every site/array/stage.
 - Each module accepts a `DebugCollector`, so custom tooling (e.g., send events to Loki) is trivial: implement collector → pass into `simulate_day`.
+- Example events (JSONL):
+
+  ```json
+  {"array":null,"payload":{"midpoint_shift_seconds":-1800.0,"note":"solar position and POA use midpoint-corrected geometry, reindexed to provider timestamps","step_seconds":3600.0,"weather_label":"end"},"site":"site1","stage":"time.label_alignment","ts":"2025-06-01T00:00:00+00:00"}
+  {"array":"roof","payload":{"integration":"interval_h","poa_global_max":950.2,"poa_kwh_m2":6.12,"poa_wh_m2":6120.0},"site":"site1","stage":"poa.summary","ts":"2025-06-01T00:00:00+00:00"}
+  ```
 - Typical workflow to trace differences:
 
   ```bash
