@@ -57,7 +57,5 @@ def test_inverter_group_mixed_eta_inv_nom_chooses_max():
     site = Site(id="s", location=Location(id="loc", lat=0, lon=0), arrays=arrays)
     scenario = Scenario(sites=[site])
 
-    res = simulate_day(scenario, dt.date(2025, 1, 1), weather_provider=wx)
-    # the higher eta_inv_nom should have been chosen; ensure outputs exist and non-negative
-    df_out = res.timeseries[("s", "a1")]
-    assert (df_out["pac_w"] >= 0).all()
+    with pytest.raises(ValueError, match=r"inconsistent eta_inv_nom"):
+        simulate_day(scenario, dt.date(2025, 1, 1), weather_provider=wx)

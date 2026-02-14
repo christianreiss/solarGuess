@@ -54,6 +54,7 @@ def poa_irradiance(
     horizon_deg: list[float] | None = None,
     iam_model: str | None = None,
     iam_coefficient: float | None = None,
+    interval_h: pd.Series | None = None,
     debug: DebugCollector | None = None,
 ) -> pd.DataFrame:
     """Compute plane-of-array irradiance using pvlib's total irradiance models.
@@ -129,26 +130,46 @@ def poa_irradiance(
     df = apply_iam(df, iam_model=iam_model, iam_coefficient=iam_coefficient, aoi=aoi, debug=debug)
     df = df.apply(lambda s: s.where(s > -_NEG_EPS, 0.0).clip(lower=0.0))
 
-    _emit_summary(debug, df)
+    _emit_summary(debug, df, interval_h=interval_h)
     return df
 
 
-def _emit_summary(debug: DebugCollector, df: pd.DataFrame) -> None:
+def _emit_summary(debug: DebugCollector, df: pd.DataFrame, *, interval_h: pd.Series | None) -> None:
     if df.empty:
-        debug.emit("poa.summary", {"poa_wh_m2": 0.0, "poa_global_max": 0.0}, ts=None)
+        debug.emit(
+            "poa.summary",
+            {"poa_wh_m2": 0.0, "poa_kwh_m2": 0.0, "poa_global_max": 0.0, "integration": "none"},
+            ts=None,
+        )
         return
 
-    # Infer timestep to integrate energy (Wh/m^2).
-    if len(df.index) > 1:
-        deltas = df.index.to_series().diff().dt.total_seconds().dropna()
-        step_seconds = float(deltas.median()) if not deltas.empty else 0.0
-    else:
-        step_seconds = 0.0
-    energy_wh_m2 = float((df["poa_global"] * (step_seconds / 3600.0)).sum()) if step_seconds > 0 else 0.0
+    energy_wh_m2 = 0.0
+    integration = "median_step"
+
+    # Prefer explicit interval widths when provided (matches engine integration on DST/irregular grids).
+    if interval_h is not None:
+        try:
+            interval = interval_h.astype(float).reindex(df.index)
+            if not interval.empty and not bool(interval.isna().any()):
+                energy_wh_m2 = float((df["poa_global"].astype(float) * interval).sum())
+                integration = "interval_h"
+        except Exception:  # pragma: no cover - summary should never crash the core pipeline
+            integration = "median_step"
+
+    if integration != "interval_h":
+        # Infer timestep to integrate energy (Wh/m^2) as a fallback.
+        if len(df.index) > 1:
+            deltas = df.index.to_series().diff().dt.total_seconds().dropna()
+            step_seconds = float(deltas.median()) if not deltas.empty else 0.0
+        else:
+            step_seconds = 0.0
+        energy_wh_m2 = float((df["poa_global"] * (step_seconds / 3600.0)).sum()) if step_seconds > 0 else 0.0
 
     payload = {
-        "poa_wh_m2": energy_wh_m2,
+        "poa_wh_m2": float(energy_wh_m2),
+        "poa_kwh_m2": float(energy_wh_m2 / 1000.0),
         "poa_global_max": float(df["poa_global"].max()),
+        "integration": integration,
     }
     debug.emit("poa.summary", payload, ts=df.index[0])
 

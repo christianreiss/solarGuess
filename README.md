@@ -220,6 +220,7 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 - Perez transposition with `dni_extra` precomputed. Negative irradiance caused by API noise is clipped to zero for deterministic behavior.
 - Ground-reflected diffuse uses per-array `albedo` (default `0.2`), so snow/bright ground can be modeled explicitly when needed.
 - Returns columns `poa_global`, `poa_direct`, `poa_diffuse`, `poa_ground_diffuse` per array. Summary debug reports energy (`poa_wh_m2`) and peak POA.
+  - Note: `poa.summary` also emits `poa_kwh_m2` and reports whether the integration used explicit `interval_h` (preferred) vs a median timestep fallback.
 
 ### 6. Cell temperature (`solar.temperature.cell_temperature`)
 
@@ -244,6 +245,7 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 ### 10. Inverters & clipping (`engine.simulate` + `pv.power.pvwatts_ac`)
 
 - Arrays join inverter groups via `inverter_group_id`. If you provide `inverter_pdc0_w`, it's honored verbatim; otherwise we derive it from `dc_ac_ratio` and `eta_inv_nom`.
+- Grouped arrays must agree on `dc_ac_ratio` / `eta_inv_nom` (and `eta_inv_nom` even when `inverter_pdc0_w` is explicit). Mismatches fail fast to avoid silent clipping/energy bias.
 - PVWatts inverter model returns clipped `pac_w`. We apportion group AC back to arrays using their instantaneous DC share to avoid energy creation.
 
 ### 11. System losses (`pv.power.apply_losses`)

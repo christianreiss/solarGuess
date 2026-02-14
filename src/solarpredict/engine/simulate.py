@@ -651,6 +651,7 @@ def simulate_day(
 
         times = wx.index
         step_seconds = _infer_step_seconds(times, timestep)
+        interval_h_site = _interval_hours(times, step_seconds=step_seconds, label=weather_label)
         snow_wx = None
         if snow_weather is not None and str(site.id) in snow_weather:
             snow_wx = _align_snow_inputs(snow_weather[str(site.id)], times)
@@ -683,6 +684,25 @@ def simulate_day(
                 )
 
         # Use interval midpoints when we have a valid step to reduce bias from averaged irradiance.
+        midpoint_shift_seconds = 0.0
+        if step_seconds > 0:
+            label = (weather_label or "end").lower()
+            if label == "end":
+                midpoint_shift_seconds = -step_seconds / 2.0
+            elif label == "start":
+                midpoint_shift_seconds = step_seconds / 2.0
+            else:  # center
+                midpoint_shift_seconds = 0.0
+        site_debug.emit(
+            "time.label_alignment",
+            {
+                "weather_label": str(weather_label),
+                "step_seconds": float(step_seconds),
+                "midpoint_shift_seconds": float(midpoint_shift_seconds),
+                "note": "solar position and POA use midpoint-corrected geometry, reindexed to provider timestamps",
+            },
+            ts=times[0] if len(times) else None,
+        )
         solar_times = _apply_time_label(times, step_seconds, weather_label)
 
         solar_pos = solar_position(site.location, solar_times, debug=debug, site_id=site.id)
@@ -693,32 +713,35 @@ def simulate_day(
 
         solar_noon_ts = solar_pos["elevation"].idxmax() if not solar_pos.empty else None
 
+        # Decompose DNI/DHI once per site (depends only on GHI + zenith, not array geometry).
+        dni_site, dhi_site = fill_dni_dhi(
+            ghi_wm2=wx["ghi_wm2"],
+            solar_zenith_deg=solar_pos["zenith"],
+            dni_wm2=wx.get("dni_wm2"),
+            dhi_wm2=wx.get("dhi_wm2"),
+            debug=site_debug,
+        )
+
         # Precompute per-array POA/temp/DC (independent of inverter grouping)
         array_data = {}
         for array in site.arrays:
             arr_debug = ScopedDebugCollector(site_debug, array=array.id)
-            dni, dhi = fill_dni_dhi(
-                ghi_wm2=wx["ghi_wm2"],
-                solar_zenith_deg=solar_pos["zenith"],
-                dni_wm2=wx.get("dni_wm2"),
-                dhi_wm2=wx.get("dhi_wm2"),
-                debug=arr_debug,
-            )
             arr_iam_model = iam_model if iam_model is not None else array.iam_model
             arr_iam_coeff = iam_coefficient if iam_coefficient is not None else array.iam_coefficient
 
             poa = poa_irradiance(
                 surface_tilt=array.tilt_deg,
                 surface_azimuth=array.azimuth_deg,
-                dni=dni,
+                dni=dni_site,
                 ghi=wx["ghi_wm2"],
-                dhi=dhi,
+                dhi=dhi_site,
                 solar_zenith=solar_pos["zenith"],
                 solar_azimuth=solar_pos["azimuth"],
                 albedo=array.albedo,
                 horizon_deg=array.horizon_deg,
                 iam_model=arr_iam_model,
                 iam_coefficient=arr_iam_coeff,
+                interval_h=interval_h_site,
                 debug=arr_debug,
             )
             arr_debug.emit("stage.poa", {"rows": len(poa)}, ts=times[0])
@@ -812,13 +835,36 @@ def simulate_day(
                     raise ValueError(
                         f"Arrays in inverter group '{group_id}' specify conflicting inverter_pdc0_w values: {sorted(explicit_sizes)}"
                     )
+                eta_vals = {a: float(array_data[a]["array"].eta_inv_nom) for a in arr_ids}
+                eta_unique = sorted({round(v, 6) for v in eta_vals.values()})
+                if len(eta_unique) > 1:
+                    rendered = ", ".join(f"{a}={eta_vals[a]:.6g}" for a in arr_ids)
+                    raise ValueError(
+                        f"Inverter group '{group_id}' has inconsistent eta_inv_nom values: {rendered}. "
+                        "Set eta_inv_nom consistently for arrays that share an inverter."
+                    )
                 pdc0_inv = explicit_sizes.pop()
-                # If user gave an AC nameplate (rare), we still respect eta_inv_nom to keep pac0=eta_inv_nom*pdc0_inv
-                eta_inv_nom = max(array_data[a]["array"].eta_inv_nom for a in arr_ids)
+                eta_inv_nom = float(next(iter(eta_vals.values())))
             else:
                 pdc0_group = sum(array_data[a]["array"].pdc0_w for a in arr_ids)
-                dc_ac_ratio = max(array_data[a]["array"].dc_ac_ratio for a in arr_ids)
-                eta_inv_nom = max(array_data[a]["array"].eta_inv_nom for a in arr_ids)
+                dc_vals = {a: float(array_data[a]["array"].dc_ac_ratio) for a in arr_ids}
+                dc_unique = sorted({round(v, 6) for v in dc_vals.values()})
+                if len(dc_unique) > 1:
+                    rendered = ", ".join(f"{a}={dc_vals[a]:.6g}" for a in arr_ids)
+                    raise ValueError(
+                        f"Inverter group '{group_id}' has inconsistent dc_ac_ratio values: {rendered}. "
+                        "Set dc_ac_ratio consistently for arrays that share an inverter, or provide explicit inverter_pdc0_w."
+                    )
+                eta_vals = {a: float(array_data[a]["array"].eta_inv_nom) for a in arr_ids}
+                eta_unique = sorted({round(v, 6) for v in eta_vals.values()})
+                if len(eta_unique) > 1:
+                    rendered = ", ".join(f"{a}={eta_vals[a]:.6g}" for a in arr_ids)
+                    raise ValueError(
+                        f"Inverter group '{group_id}' has inconsistent eta_inv_nom values: {rendered}. "
+                        "Set eta_inv_nom consistently for arrays that share an inverter, or provide explicit inverter_pdc0_w."
+                    )
+                dc_ac_ratio = float(next(iter(dc_vals.values())))
+                eta_inv_nom = float(next(iter(eta_vals.values())))
                 pdc0_inv = inverter_pdc0_from_dc_ac_ratio(pdc0_group, dc_ac_ratio, eta_inv_nom)
 
             pac_group = pvwatts_ac(pdc_sum, pdc0_inv_w=pdc0_inv, eta_inv_nom=eta_inv_nom, debug=site_debug)
@@ -854,18 +900,17 @@ def simulate_day(
             _emit_series(arr_debug, "ac.detail", pac.rename("pac_w"), ts=times[0], site=site.id, array=array.id)
 
             pac_net = apply_losses(pac, array.losses_percent, debug=arr_debug)
-            interval_h = _interval_hours(pac_net.index, step_seconds=step_seconds, label=weather_label)
             arr_debug.emit(
                 "stage.aggregate",
-                {"rows": len(pac_net), "interval_h_mean": float(interval_h.mean()) if len(interval_h) else None},
+                {"rows": len(pac_net), "interval_h_mean": float(interval_h_site.mean()) if len(interval_h_site) else None},
                 ts=times[0],
             )
             _emit_series(arr_debug, "ac.net", pac_net.rename("pac_net_w"), ts=times[0], site=site.id, array=array.id)
-            _emit_series(arr_debug, "intervals", interval_h.rename("interval_h"), ts=times[0], site=site.id, array=array.id)
+            _emit_series(arr_debug, "intervals", interval_h_site.rename("interval_h"), ts=times[0], site=site.id, array=array.id)
 
-            energy_kwh = float(((pac_net / 1000.0) * interval_h).sum())
+            energy_kwh = float(((pac_net / 1000.0) * interval_h_site).sum())
             peak_kw = float(pac_net.max() / 1000)
-            poa_kwh_m2 = float(((poa["poa_global"] / 1000.0) * interval_h).sum())
+            poa_kwh_m2 = float(((poa["poa_global"] / 1000.0) * interval_h_site).sum())
             temp_cell_max = float(temps.max())
 
             daily_rows.append(
@@ -888,7 +933,7 @@ def simulate_day(
                     "pac_w": pac,
                     "pac_net_w": pac_net,
                     "snow_loss_factor": data.get("snow_factor"),
-                    "interval_h": interval_h,
+                    "interval_h": interval_h_site,
                 }
             )
             _emit_df(arr_debug, "timeseries", ts_df, ts=times[0], site=site.id, array=array.id)

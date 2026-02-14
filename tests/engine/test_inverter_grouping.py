@@ -82,6 +82,78 @@ def test_shared_inverter_conflicting_sizes_raise():
         simulate_day(scenario, dt.date(2025, 6, 1), timestep="1h", weather_provider=wx)
 
 
+def test_shared_inverter_mismatched_dc_ac_ratio_raises():
+    wx = FlatWeather()
+    loc = Location(id="loc", lat=0, lon=0, tz="UTC")
+    arrays = [
+        PVArray(
+            id="a1",
+            tilt_deg=30,
+            azimuth_deg=180,
+            pdc0_w=4000,
+            gamma_pdc=-0.004,
+            dc_ac_ratio=1.1,
+            eta_inv_nom=0.96,
+            losses_percent=0,
+            temp_model="close_mount_glass_glass",
+            inverter_group_id="g1",
+        ),
+        PVArray(
+            id="a2",
+            tilt_deg=30,
+            azimuth_deg=180,
+            pdc0_w=4000,
+            gamma_pdc=-0.004,
+            dc_ac_ratio=1.3,
+            eta_inv_nom=0.96,
+            losses_percent=0,
+            temp_model="close_mount_glass_glass",
+            inverter_group_id="g1",
+        ),
+    ]
+    scenario = Scenario(sites=[Site(id="s", location=loc, arrays=arrays)])
+
+    with pytest.raises(ValueError):
+        simulate_day(scenario, dt.date(2025, 6, 1), timestep="1h", weather_provider=wx)
+
+
+def test_shared_inverter_mismatched_eta_inv_nom_raises_even_when_explicit_size():
+    wx = FlatWeather()
+    loc = Location(id="loc", lat=0, lon=0, tz="UTC")
+    arrays = [
+        PVArray(
+            id="a1",
+            tilt_deg=30,
+            azimuth_deg=180,
+            pdc0_w=4000,
+            gamma_pdc=-0.004,
+            dc_ac_ratio=1.1,
+            eta_inv_nom=0.96,
+            losses_percent=0,
+            temp_model="close_mount_glass_glass",
+            inverter_group_id="g1",
+            inverter_pdc0_w=3000,
+        ),
+        PVArray(
+            id="a2",
+            tilt_deg=30,
+            azimuth_deg=180,
+            pdc0_w=4000,
+            gamma_pdc=-0.004,
+            dc_ac_ratio=1.1,
+            eta_inv_nom=0.98,
+            losses_percent=0,
+            temp_model="close_mount_glass_glass",
+            inverter_group_id="g1",
+            inverter_pdc0_w=3000,
+        ),
+    ]
+    scenario = Scenario(sites=[Site(id="s", location=loc, arrays=arrays)])
+
+    with pytest.raises(ValueError):
+        simulate_day(scenario, dt.date(2025, 6, 1), timestep="1h", weather_provider=wx)
+
+
 def test_inverter_grouping_zero_pdc_does_not_warn():
     """Night/very-dark hours produce pdc_sum=0; allocation should stay numeric without pandas downcast warnings."""
 
