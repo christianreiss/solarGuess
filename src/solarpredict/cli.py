@@ -562,17 +562,6 @@ def run(
 
     weather_source = weather_source.lower()
     if weather_source == "open-meteo":
-        # Open-Meteo forecast API only supports ~16 days ahead and (depending on model) ~92 days back via past_days.
-        horizon_forward_days = 16
-        horizon_backward_days = 92
-        delta_days = (date_obj - dt.date.today()).days
-        if delta_days > horizon_forward_days or delta_days < -horizon_backward_days:
-            direction = "ahead" if delta_days > 0 else "ago"
-            _exit_with_error(
-                f"Open-Meteo forecast covers about {horizon_backward_days} days back and {horizon_forward_days} days forward; "
-                f"requested {abs(delta_days)} days {direction} ({date_obj}). "
-                "Use --weather-source pvgis-tmy for historical/baseline dates or pick a date within the supported window."
-            )
         provider = default_weather_provider(debug=debug_collector)
     elif weather_source == "pvgis-tmy":
         provider = PVGISWeatherProvider(debug=debug_collector, cache_dir=pvgis_cache_dir)
@@ -1155,6 +1144,7 @@ def ha_compare(
                 date=cur,
                 timestep=timestep,
                 weather_provider=provider,
+                snow_weather_provider=provider,
                 debug=debug_collector,
                 weather_label=weather_label,
                 weather_mode=effective_weather_mode,
@@ -1384,6 +1374,7 @@ def ha_tune(
                 date=cur,
                 timestep=timestep,
                 weather_provider=provider,
+                snow_weather_provider=provider,
                 debug=debug_collector,
                 weather_label=weather_label,
                 weather_mode=effective_weather_mode,

@@ -282,8 +282,8 @@ With that in place `solarguess go --date 2025-12-16` will run + publish using th
 
 ### Snow cover loss factor
 
-- Snow loss is **automatic** when Open‑Meteo reports snow depth/snowfall or cold precipitation (≤ 0°C). No config required.
-- We always fetch Open‑Meteo in parallel (even if irradiance comes from PVGIS or cloud‑scaled mode) to detect snow/precip.
+- Snow loss is **automatic** when the active weather data already includes snow depth/snowfall or cold precipitation (≤ 0°C).
+- When the main provider does not include snow fields, the simulator may fetch Open‑Meteo as a best-effort fallback for normal forecast runs.
 - Internally we use a fixed linear coverage model: losses start at 0.5 cm, reach max loss at 5 cm, and max loss is 0.7 (70%).
 
 ### PVGIS QC + clipping
@@ -453,6 +453,8 @@ PYTHONPATH=src solarguess ha-tune \
   --weather-debug tmp_ha_compare_openmeteo.debug.jsonl \
   --write-config etc/config.tuned.yaml
 ```
+
+When `--weather-debug` is used, calibration reuses the prefetched weather for both irradiance and snow inputs, so no extra Open-Meteo fetch is needed.
 
 ---
 

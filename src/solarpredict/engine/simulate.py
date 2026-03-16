@@ -573,6 +573,7 @@ def simulate_day(
     date: dt.date,
     timestep: str = "1h",
     weather_provider=None,
+    snow_weather_provider=None,
     debug: DebugCollector | None = None,
     weather_label: str = "end",
     weather_mode: str | None = None,
@@ -602,7 +603,18 @@ def simulate_day(
     )
     weather = weather_provider.get_forecast(locations, start=start, end=end, timestep=timestep)
     snow_weather = None
-    if isinstance(weather_provider, (OpenMeteoWeatherProvider, CloudScaledWeatherProvider)):
+    has_inline_snow = any(
+        {"snow_depth_cm", "snowfall_cm", "precip_mm"}.intersection(df.columns)
+        for df in weather.values()
+        if df is not None and not df.empty
+    )
+    if snow_weather_provider is False:
+        snow_weather = None
+    elif has_inline_snow:
+        snow_weather = weather
+    elif snow_weather_provider is not None:
+        snow_weather = snow_weather_provider.get_forecast(locations, start=start, end=end, timestep=timestep)
+    elif isinstance(weather_provider, (OpenMeteoWeatherProvider, CloudScaledWeatherProvider)):
         snow_weather = weather
     else:
         try:
@@ -648,6 +660,13 @@ def simulate_day(
             start_ts = pd.Timestamp(date)
         end_ts = start_ts + pd.Timedelta(days=1)
         wx = wx.loc[(wx.index >= start_ts) & (wx.index < end_ts)]
+        if wx.empty:
+            site_debug.emit(
+                "weather.empty",
+                {"date": date.isoformat(), "reason": "no_samples_after_slice"},
+                ts=start_ts,
+            )
+            raise ValueError(f"No weather samples for site {site.id} on {date.isoformat()}.")
 
         times = wx.index
         step_seconds = _infer_step_seconds(times, timestep)
