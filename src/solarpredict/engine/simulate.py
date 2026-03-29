@@ -408,6 +408,7 @@ def _align_snow_inputs(snow_df: pd.DataFrame | None, target_index: pd.DatetimeIn
         return None
 
     df = snow_df.copy()
+    candidate_cols = ("snow_depth_cm", "snowfall_cm", "precip_mm", "temp_air_c")
     target_tz = target_index.tz if hasattr(target_index, "tz") else None
     if getattr(df.index, "tz", None) is not None:
         if target_tz is not None:
@@ -417,10 +418,35 @@ def _align_snow_inputs(snow_df: pd.DataFrame | None, target_index: pd.DatetimeIn
     elif target_tz is not None:
         df.index = df.index.tz_localize(target_tz)
 
+    selected_cols = [col for col in candidate_cols if col in df.columns]
+    if not selected_cols:
+        return None
+
+    if len(target_index):
+        # Prefer the exact site-day slice when the provider returned a wider window.
+        # This preserves duplicate DST-shifted labels (for example spring-forward 03:00)
+        # without forcing a reindex on a non-unique source index.
+        window = df.loc[(df.index >= target_index[0]) & (df.index <= target_index[-1]), selected_cols]
+        if len(window) == len(target_index) and window.index.equals(target_index):
+            aligned = pd.DataFrame(index=target_index)
+            for col in selected_cols:
+                series = pd.Series(window[col].astype(float).to_numpy(), index=target_index, name=col)
+                if col == "snow_depth_cm":
+                    series = series.ffill().bfill()
+                else:
+                    series = series.fillna(0.0)
+                aligned[col] = series
+            return aligned
+
+    if not df.index.is_unique:
+        aggregations = {
+            col: ("sum" if col in {"snowfall_cm", "precip_mm"} else "last")
+            for col in selected_cols
+        }
+        df = df.loc[:, selected_cols].astype(float).groupby(level=0, sort=False).agg(aggregations)
+
     aligned = pd.DataFrame(index=target_index)
-    for col in ("snow_depth_cm", "snowfall_cm", "precip_mm", "temp_air_c"):
-        if col not in df.columns:
-            continue
+    for col in selected_cols:
         series = df[col].astype(float).reindex(target_index)
         if col == "snow_depth_cm":
             series = series.ffill().bfill()

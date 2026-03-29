@@ -45,6 +45,23 @@ def _scenario():
     return Scenario(sites=[site])
 
 
+def _scenario_in_tz(tz: str):
+    loc = Location(id="s", lat=51.17133, lon=6.98786, tz=tz)
+    arr = PVArray(
+        id="a",
+        tilt_deg=30,
+        azimuth_deg=180,
+        pdc0_w=10000,
+        gamma_pdc=-0.004,
+        dc_ac_ratio=1.1,
+        eta_inv_nom=0.96,
+        losses_percent=0,
+        temp_model="close_mount_glass_glass",
+    )
+    site = Site(id="s", location=loc, arrays=[arr])
+    return Scenario(sites=[site])
+
+
 def test_snow_loss_reduces_energy_and_marks_timeseries(monkeypatch):
     wx = SnowyWeather()
     clear_df = wx.df.drop(columns=["snow_depth_cm"]).copy()
@@ -77,6 +94,57 @@ def test_snow_loss_reduces_energy_and_marks_timeseries(monkeypatch):
     ts = result_snow.timeseries[("s", "a")]
     assert "snow_loss_factor" in ts.columns
     assert ts["snow_loss_factor"].iloc[0] == pytest.approx(0.3)
+
+
+def test_open_meteo_snow_fallback_handles_dst_duplicate_labels(monkeypatch):
+    provider = OpenMeteoWeatherProvider()
+    time_values = pd.date_range("2026-03-29 00:00", "2026-03-30 00:00", freq="1h").strftime("%Y-%m-%dT%H:%M").tolist()
+    payload = {
+        "timezone": "Europe/Berlin",
+        "hourly": {
+            "time": time_values,
+            "temperature_2m": [1.0] * len(time_values),
+            "wind_speed_10m": [1.0] * len(time_values),
+            "shortwave_radiation": [0.0] * len(time_values),
+            "diffuse_radiation": [0.0] * len(time_values),
+            "direct_normal_irradiance": [0.0] * len(time_values),
+            "precipitation": [0.0] * len(time_values),
+            "snowfall": [0.0] * len(time_values),
+            "snow_depth": [0.0] * len(time_values),
+            "cloudcover": [0.0] * len(time_values),
+        },
+        "hourly_units": {
+            "wind_speed_10m": "m/s",
+            "precipitation": "mm",
+            "snowfall": "cm",
+            "snow_depth": "cm",
+        },
+    }
+    full_weather = provider._parse_single(payload)
+    assert not full_weather.index.is_unique
+
+    clear_df = full_weather.drop(columns=["snow_depth_cm", "snowfall_cm", "precip_mm"]).copy()
+
+    class WeatherWithoutSnow:
+        def get_forecast(self, locations, start, end, timestep="1h"):
+            return {loc["id"]: clear_df for loc in locations}
+
+    def _fake_open_meteo_snow(self, locations, start, end, timestep="1h"):
+        return {loc["id"]: full_weather for loc in locations}
+
+    monkeypatch.setattr(OpenMeteoWeatherProvider, "get_forecast", _fake_open_meteo_snow)
+
+    result = simulate_day(
+        _scenario_in_tz("Europe/Berlin"),
+        dt.date(2026, 3, 29),
+        timestep="1h",
+        weather_provider=WeatherWithoutSnow(),
+    )
+
+    ts = result.timeseries[("s", "a")]
+    assert len(ts) == 25
+    assert ts["snow_loss_factor"].notna().all()
+    assert ts.index.duplicated().sum() == 1
 
 
 def test_prefetched_weather_with_snow_columns_does_not_side_fetch(monkeypatch):
